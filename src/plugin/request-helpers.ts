@@ -118,6 +118,19 @@ function isThinkingPart(part: Record<string, unknown>): boolean {
 }
 
 /**
+ * Removes trailing thinking blocks from a content array.
+ * Claude API requires that assistant messages don't end with thinking blocks.
+ * Only removes unsigned thinking blocks; preserves those with valid signatures.
+ */
+function removeTrailingThinkingBlocks(contentArray: any[]): any[] {
+  const result = [...contentArray];
+  while (result.length > 0 && isThinkingPart(result[result.length - 1]) && !hasValidSignature(result[result.length - 1])) {
+    result.pop();
+  }
+  return result;
+}
+
+/**
  * Checks if a thinking part has a valid signature.
  * A valid signature is a non-empty string with at least 50 characters.
  */
@@ -267,13 +280,25 @@ export function filterUnsignedThinkingBlocks(
 
     // Gemini format: contents[].parts[]
     if (Array.isArray((content as any).parts)) {
-      const filteredParts = filterContentArray((content as any).parts, sessionId, getCachedSignatureFn);
+      let filteredParts = filterContentArray((content as any).parts, sessionId, getCachedSignatureFn);
+
+      // Remove trailing thinking blocks for model role (assistant equivalent in Gemini)
+      if ((content as any).role === "model") {
+        filteredParts = removeTrailingThinkingBlocks(filteredParts);
+      }
+
       return { ...content, parts: filteredParts };
     }
 
     // Some Anthropic-style payloads may appear here as contents[].content[]
     if (Array.isArray((content as any).content)) {
-      const filteredContent = filterContentArray((content as any).content, sessionId, getCachedSignatureFn);
+      let filteredContent = filterContentArray((content as any).content, sessionId, getCachedSignatureFn);
+
+      // Claude API requires assistant messages don't end with thinking blocks
+      if ((content as any).role === "assistant") {
+        filteredContent = removeTrailingThinkingBlocks(filteredContent);
+      }
+
       return { ...content, content: filteredContent };
     }
 
@@ -295,7 +320,13 @@ export function filterMessagesThinkingBlocks(
     }
 
     if (Array.isArray((message as any).content)) {
-      const filteredContent = filterContentArray((message as any).content, sessionId, getCachedSignatureFn);
+      let filteredContent = filterContentArray((message as any).content, sessionId, getCachedSignatureFn);
+
+      // Claude API requires assistant messages don't end with thinking blocks
+      if ((message as any).role === "assistant") {
+        filteredContent = removeTrailingThinkingBlocks(filteredContent);
+      }
+
       return { ...message, content: filteredContent };
     }
 

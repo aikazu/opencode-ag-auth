@@ -462,29 +462,49 @@ export function prepareAntigravityRequest(
             const functionDeclarations: any[] = [];
             const passthroughTools: any[] = [];
 
-            // Sanitize schema - remove features not supported by JSON Schema draft 2020-12
-            // Recursively strips anyOf/allOf/oneOf and converts to permissive types
+            // Sanitize schema using ALLOWLIST approach - only keep basic features needed for function calling
+            // This is more aggressive than blocklisting, ensuring any unknown/unsupported features are stripped
+            // See docs/ANTIGRAVITY_API_SPEC.md for full list of unsupported features
             const sanitizeSchema = (schema: any): any => {
               if (!schema || typeof schema !== "object") {
                 return schema;
               }
 
+              // Only keep these basic schema features (allowlist approach)
+              // Everything else gets stripped automatically
+              const ALLOWED_KEYS = new Set([
+                "type",
+                "properties",
+                "required",
+                "description",
+                "enum",
+                "items",
+                "additionalProperties",
+              ]);
+
               const sanitized: any = {};
 
               for (const key of Object.keys(schema)) {
-                // Skip anyOf/allOf/oneOf - not well supported
-                if (key === "anyOf" || key === "allOf" || key === "oneOf") {
+                // Convert "const" to "enum: [value]" (const is not supported but enum is)
+                if (key === "const") {
+                  sanitized.enum = [schema[key]];
+                  continue;
+                }
+
+                // Skip keys not in allowlist
+                if (!ALLOWED_KEYS.has(key)) {
                   continue;
                 }
 
                 const value = schema[key];
 
                 if (key === "items" && value && typeof value === "object") {
-                  // Handle array items - if it has anyOf, replace with permissive type
-                  if (value.anyOf || value.allOf || value.oneOf) {
-                    sanitized.items = {};
+                  const sanitizedItems = sanitizeSchema(value);
+                  // Empty items schema {} is invalid - convert to permissive string type
+                  if (Object.keys(sanitizedItems).length === 0) {
+                    sanitized.items = { type: "string" };
                   } else {
-                    sanitized.items = sanitizeSchema(value);
+                    sanitized.items = sanitizedItems;
                   }
                 } else if (key === "properties" && value && typeof value === "object") {
                   // Recursively sanitize properties
@@ -503,14 +523,38 @@ export function prepareAntigravityRequest(
             };
 
             const normalizeSchema = (schema: any) => {
+              // Helper to create a placeholder schema for empty parameter tools
+              // Antigravity API in VALIDATED mode cannot handle truly empty schemas
+              // The placeholder must be REQUIRED so the model sends a non-empty args object
+              const createPlaceholderSchema = (base: any = {}) => ({
+                ...base,
+                type: "object",
+                properties: {
+                  reason: {
+                    type: "string",
+                    description: "Brief explanation of why you are calling this tool",
+                  },
+                },
+                required: ["reason"],
+              });
+
               if (!schema || typeof schema !== "object") {
                 toolDebugMissing += 1;
-                // Minimal fallback for tools without schemas
-                return { type: "object" };
+                // Fallback for tools without schemas - add dummy property for Antigravity API
+                return createPlaceholderSchema();
               }
 
-              // Sanitize and pass through
-              return sanitizeSchema(schema);
+              const sanitized = sanitizeSchema(schema);
+
+              // Check if schema is effectively empty (type: object with no properties)
+              if (
+                sanitized.type === "object" &&
+                (!sanitized.properties || Object.keys(sanitized.properties).length === 0)
+              ) {
+                return createPlaceholderSchema(sanitized);
+              }
+
+              return sanitized;
             };
 
             requestPayload.tools.forEach((tool: any, idx: number) => {

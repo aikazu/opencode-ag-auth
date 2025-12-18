@@ -206,6 +206,13 @@ The `/connect` command in the TUI adds accounts non-destructively — it will ne
 - If Google revokes a refresh token (`invalid_grant`), that account is automatically removed from the pool
 - Rerun `opencode auth login` to re-add the account
 
+## Architecture & Flow
+
+For contributors and advanced users, see the detailed documentation:
+
+- **[Claude Model Flow](docs/CLAUDE_MODEL_FLOW.md)** - Full request/response flow, improvements, and fixes
+- **[Antigravity API Spec](docs/ANTIGRAVITY_API_SPEC.md)** - API reference and schema support matrix
+
 ## Streaming & thinking
 
 This plugin supports **real-time SSE streaming**, meaning you see thinking blocks and text output incrementally as they are generated.
