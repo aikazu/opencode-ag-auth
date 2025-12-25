@@ -83,15 +83,15 @@ export type HeaderStyle = "antigravity" | "gemini-cli";
 export const ANTIGRAVITY_PROVIDER_ID = "google";
 
 /**
- * When true, preserves thinking blocks for Claude models using signature caching/restoration.
- * By default (false), thinking blocks are stripped from Claude requests for reliability.
+ * Whether to preserve thinking blocks for Claude models.
  * 
- * Set OPENCODE_ANTIGRAVITY_KEEP_THINKING=1 to enable thinking preservation.
+ * This value is now controlled via config (see plugin/config/schema.ts).
+ * The default is false for reliability. Set to true via:
+ * - Config file: { "keep_thinking": true }
+ * - Env var: OPENCODE_ANTIGRAVITY_KEEP_THINKING=1
  * 
- * Trade-offs:
- * - false (default): 100% reliable, no signature errors, ~5-15% more tokens per turn
- * - true: Full context preserved, but may encounter signature validation errors if
- *   OpenCode SDK modifies thinking blocks (adds cache_control, wraps in objects)
+ * @deprecated Use config.keep_thinking from loadConfig() instead.
+ *             This export is kept for backward compatibility but reads from env.
  */
 export const KEEP_THINKING_BLOCKS =
   process.env.OPENCODE_ANTIGRAVITY_KEEP_THINKING === "1" ||

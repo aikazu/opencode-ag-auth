@@ -27,6 +27,11 @@ import {
   transformThinkingParts,
   type AntigravityApiBody,
 } from "./request-helpers";
+import {
+  analyzeConversationState,
+  closeToolLoopForThinking,
+  needsThinkingRecovery,
+} from "./thinking-recovery";
 
 /**
  * Stable session ID for the plugin's lifetime.
@@ -733,6 +738,7 @@ export function prepareAntigravityRequest(
   toolDebugPayload?: string;
   needsSignedThinkingWarmup?: boolean;
   headerStyle: HeaderStyle;
+  thinkingRecoveryMessage?: string;
 } {
   const baseInit: RequestInit = { ...init };
   const headers = new Headers(init?.headers ?? {});
@@ -742,6 +748,7 @@ export function prepareAntigravityRequest(
   let toolDebugPayload: string | undefined;
   let sessionId: string | undefined;
   let needsSignedThinkingWarmup = false;
+  let thinkingRecoveryMessage: string | undefined;
 
   if (!isGenerativeLanguageRequest(input)) {
     return {
@@ -1267,6 +1274,34 @@ export function prepareAntigravityRequest(
           });
         }
 
+        // =====================================================================
+        // LAST RESORT RECOVERY: "Let it crash and start again"
+        // =====================================================================
+        // If after all our processing we're STILL in a bad state (tool loop without
+        // thinking at turn start), don't try to fix it - just close the turn and
+        // start fresh. This prevents permanent session breakage.
+        //
+        // This handles cases where:
+        // - Context compaction stripped thinking blocks
+        // - Signature cache miss
+        // - Any other corruption we couldn't repair
+        //
+        // The synthetic messages allow Claude to generate fresh thinking on the
+        // new turn instead of failing with "Expected thinking but found text".
+        if (isClaudeThinkingModel && Array.isArray(requestPayload.contents)) {
+          const conversationState = analyzeConversationState(requestPayload.contents);
+
+          if (needsThinkingRecovery(conversationState)) {
+            // Set message for toast notification (shown in plugin.ts, respects quiet mode)
+            thinkingRecoveryMessage = "Thinking recovery: restarting turn (corrupted context)";
+
+            requestPayload.contents = closeToolLoopForThinking(requestPayload.contents);
+
+            // Clear the cached thinking for this session since we're starting fresh
+            lastSignedThinkingBySessionKey.delete(signatureSessionKey);
+          }
+        }
+
         if ("model" in requestPayload) {
           delete requestPayload.model;
         }
@@ -1346,6 +1381,7 @@ export function prepareAntigravityRequest(
     toolDebugPayload,
     needsSignedThinkingWarmup,
     headerStyle,
+    thinkingRecoveryMessage,
   };
 }
 

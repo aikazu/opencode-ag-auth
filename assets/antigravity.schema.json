@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json",
+  "title": "Antigravity Auth Configuration",
+  "description": "Configuration schema for opencode-antigravity-auth plugin",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE support"
+    },
+    "quiet_mode": {
+      "type": "boolean",
+      "default": false,
+      "description": "Suppress most toast notifications (rate limit, account switching, etc.). Recovery toasts are always shown."
+    },
+    "debug": {
+      "type": "boolean",
+      "default": false,
+      "description": "Enable debug logging to file. Env override: OPENCODE_ANTIGRAVITY_DEBUG=1"
+    },
+    "log_dir": {
+      "type": "string",
+      "description": "Custom directory for debug logs. Env override: OPENCODE_ANTIGRAVITY_LOG_DIR=/path/to/logs"
+    },
+    "keep_thinking": {
+      "type": "boolean",
+      "default": false,
+      "description": "Preserve thinking blocks for Claude models using signature caching. Env override: OPENCODE_ANTIGRAVITY_KEEP_THINKING=1"
+    },
+    "session_recovery": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable automatic session recovery from tool_result_missing and thinking errors."
+    },
+    "auto_resume": {
+      "type": "boolean",
+      "default": true,
+      "description": "Automatically send 'continue' prompt after successful recovery. Only applies when session_recovery is enabled."
+    },
+    "resume_text": {
+      "type": "string",
+      "default": "continue",
+      "description": "Custom text to send when auto-resuming after recovery."
+    },
+    "auto_update": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable automatic plugin updates."
+    },
+    "signature_cache": {
+      "type": "object",
+      "description": "Signature cache configuration for persisting thinking block signatures. Only used when keep_thinking is enabled.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable disk caching of signatures."
+        },
+        "memory_ttl_seconds": {
+          "type": "number",
+          "minimum": 60,
+          "maximum": 86400,
+          "default": 3600,
+          "description": "In-memory TTL in seconds (default: 1 hour)."
+        },
+        "disk_ttl_seconds": {
+          "type": "number",
+          "minimum": 3600,
+          "maximum": 604800,
+          "default": 172800,
+          "description": "Disk TTL in seconds (default: 48 hours)."
+        },
+        "write_interval_seconds": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 600,
+          "default": 60,
+          "description": "Background write interval in seconds."
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

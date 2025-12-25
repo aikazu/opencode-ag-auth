@@ -15,6 +15,7 @@ import {
   logModelFamily,
   isDebugEnabled,
   getLogFilePath,
+  initializeDebug,
 } from "./plugin/debug";
 import {
   buildThinkingWarmupBody,
@@ -27,6 +28,9 @@ import { startOAuthListener, type OAuthListener } from "./plugin/server";
 import { clearAccounts, loadAccounts, saveAccounts } from "./plugin/storage";
 import { AccountManager, type ModelFamily } from "./plugin/accounts";
 import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
+import { loadConfig, type AntigravityConfig } from "./plugin/config";
+import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
+import { initDiskSignatureCache } from "./plugin/cache";
 import type {
   GetAuth,
   LoaderResult,
@@ -459,13 +463,75 @@ function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
 export const createAntigravityPlugin = (providerId: string) => async (
   { client, directory }: PluginContext,
 ): Promise<PluginResult> => {
+  // Load configuration from files and environment variables
+  const config = loadConfig(directory);
+  
+  // Initialize debug with config
+  initializeDebug(config);
+  
+  // Initialize disk signature cache if keep_thinking is enabled
+  // This integrates with the in-memory cacheSignature/getCachedSignature functions
+  if (config.keep_thinking) {
+    initDiskSignatureCache(config.signature_cache);
+  }
+  
+  // Initialize session recovery hook with full context
+  const sessionRecovery = createSessionRecoveryHook({ client, directory }, config);
+  
   const updateChecker = createAutoUpdateCheckerHook(client, directory, {
     showStartupToast: true,
-    autoUpdate: true,
+    autoUpdate: config.auto_update,
   });
 
+  // Event handler for session recovery and updates
+  const eventHandler = async (input: { event: { type: string; properties?: unknown } }) => {
+    // Forward to update checker
+    await updateChecker.event(input);
+    
+    // Handle session recovery
+    if (sessionRecovery && input.event.type === "session.error") {
+      const props = input.event.properties as Record<string, unknown> | undefined;
+      const sessionID = props?.sessionID as string | undefined;
+      const messageID = props?.messageID as string | undefined;
+      const error = props?.error;
+      
+      if (sessionRecovery.isRecoverableError(error)) {
+        const messageInfo = {
+          id: messageID,
+          role: "assistant" as const,
+          sessionID,
+          error,
+        };
+        
+        // handleSessionRecovery now does the actual fix (injects tool_result, etc.)
+        const recovered = await sessionRecovery.handleSessionRecovery(messageInfo);
+
+        // Only send "continue" AFTER successful tool_result_missing recovery
+        // (thinking recoveries already resume inside handleSessionRecovery)
+        if (recovered && sessionID && config.auto_resume) {
+          // For tool_result_missing, we need to send continue after injecting tool_results
+          await client.session.prompt({
+            path: { id: sessionID },
+            body: { parts: [{ type: "text", text: config.resume_text }] },
+            query: { directory },
+          }).catch(() => {});
+          
+          // Show success toast
+          const successToast = getRecoverySuccessToast();
+          await client.tui.showToast({
+            body: {
+              title: successToast.title,
+              message: successToast.message,
+              variant: "success",
+            },
+          }).catch(() => {});
+        }
+      }
+    }
+  };
+
   return {
-    event: updateChecker.event,
+    event: eventHandler,
     auth: {
     provider: providerId,
     loader: async (getAuth: GetAuth, provider: Provider): Promise<LoaderResult | Record<string, unknown>> => {
@@ -603,7 +669,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
           // Use while(true) loop to handle rate limits with backoff
           // This ensures we wait and retry when all accounts are rate-limited
-          const quietMode = process.env.OPENCODE_ANTIGRAVITY_QUIET === "1";
+          const quietMode = config.quiet_mode;
           
           while (true) {
             // Check for abort at the start of each iteration
@@ -873,6 +939,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   currentEndpoint,
                   currentHeaderStyle,
                 );
+
+                // Show thinking recovery toast (respects quiet mode)
+                if (!quietMode && prepared.thinkingRecoveryMessage) {
+                  await showToast(prepared.thinkingRecoveryMessage, "warning");
+                }
 
                 const originalUrl = toUrlString(input);
                 const resolvedUrl = toUrlString(prepared.request);

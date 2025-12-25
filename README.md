@@ -322,11 +322,93 @@ The `/connect` command in the TUI adds accounts non-destructively — it will ne
 - If Google revokes a refresh token (`invalid_grant`), that account is automatically removed from the pool
 - Rerun `opencode auth login` to re-add the account
 
+## Configuration
+
+### Config file
+
+Create `~/.config/opencode/antigravity.json` for advanced settings:
+
+```json
+{
+  "session_recovery": true,
+  "auto_resume": true,
+  "resume_text": "continue"
+}
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `session_recovery` | `true` | Enable automatic recovery from interrupted tool executions |
+| `auto_resume` | `true` | Automatically send resume prompt after recovery |
+| `resume_text` | `"continue"` | Text to send when auto-resuming |
+
+### Environment variables
+
+| Variable | Values | Description |
+|----------|--------|-------------|
+| `OPENCODE_ANTIGRAVITY_DEBUG` | `1`, `2` | Debug logging level (2 = verbose) |
+| `OPENCODE_ANTIGRAVITY_QUIET` | `1` | Suppress toast notifications |
+| `OPENCODE_ANTIGRAVITY_KEEP_THINKING` | `1` | Preserve thinking blocks (experimental, may cause errors) |
+| `OPENCODE_ANTIGRAVITY_LOG_DIR` | path | Custom log directory |
+
+## Known plugin interactions
+
+### @tarquinen/opencode-dcp (Dynamic Context Pruning)
+
+**Issue:** DCP creates synthetic assistant messages to summarize pruned tool outputs. These synthetic messages lack the thinking block that Claude's API requires for thinking-enabled models.
+
+**Error you'll see:**
+```
+Expected 'thinking' or 'redacted_thinking', but found 'text'
+```
+
+**Solution:** Ensure DCP loads **before** this plugin. We inject `redacted_thinking` blocks into any assistant message that lacks one.
+
+| Order | Result |
+|-------|--------|
+| DCP → antigravity | Works - we fix DCP's synthetic messages |
+| antigravity → DCP | Broken - DCP creates messages after our fix runs |
+
+**Correct:**
+```json
+{
+  "plugin": [
+    "@tarquinen/opencode-dcp@latest",
+    "opencode-antigravity-auth@latest"
+  ]
+}
+```
+
+**Incorrect:**
+```json
+{
+  "plugin": [
+    "opencode-antigravity-auth@latest",
+    "@tarquinen/opencode-dcp@latest"
+  ]
+}
+```
+
+### oh-my-opencode (Subagent Orchestration)
+
+**Issue:** When oh-my-opencode spawns multiple subagents in parallel, each subagent runs as a separate OpenCode process. Without coordination, multiple processes may select the same Antigravity account simultaneously, causing rate limit errors.
+
+**Error you'll see:**
+```
+429 Too Many Requests
+```
+
+**Current workaround:**
+- Increase your account pool (add more OAuth accounts via `opencode auth login`)
+- Reduce parallel subagent count in your configuration
+
+**Status:** A file-based reservation system to coordinate account selection across processes is planned but not yet implemented.
+
 ## Architecture & Flow
 
 For contributors and advanced users, see the detailed documentation:
 
-- **[Claude Model Flow](docs/CLAUDE_MODEL_FLOW.md)** - Full request/response flow, improvements, and fixes
+- **[Architecture Guide](docs/ARCHITECTURE.md)** - Full request/response flow, module structure, and troubleshooting
 - **[Antigravity API Spec](docs/ANTIGRAVITY_API_SPEC.md)** - API reference and schema support matrix
 
 ## Streaming & thinking

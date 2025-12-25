@@ -1,21 +1,32 @@
-import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
+import { createWriteStream, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { env } from "node:process";
+import type { AntigravityConfig } from "./config";
 
-const DEBUG_FLAG = env.OPENCODE_ANTIGRAVITY_DEBUG ?? "";
 const MAX_BODY_PREVIEW_CHARS = 12000;
 const MAX_BODY_VERBOSE_CHARS = 50000;
 
 export const DEBUG_MESSAGE_PREFIX = "[opencode-antigravity-auth debug]";
 
-// Debug levels: 0 = off, 1 = basic, 2 = verbose (full bodies)
-const debugLevel = parseDebugLevel(DEBUG_FLAG);
-const debugEnabled = debugLevel >= 1;
-const verboseEnabled = debugLevel >= 2;
-const logFilePath = debugEnabled ? defaultLogFilePath() : undefined;
-const logWriter = createLogWriter(logFilePath);
+// =============================================================================
+// Debug State (lazily initialized with config)
+// =============================================================================
 
+interface DebugState {
+  debugLevel: number;
+  debugEnabled: boolean;
+  verboseEnabled: boolean;
+  logFilePath: string | undefined;
+  logWriter: (line: string) => void;
+}
+
+let debugState: DebugState | null = null;
+
+/**
+ * Parse debug level from a flag string.
+ * 0 = off, 1 = basic, 2 = verbose (full bodies)
+ */
 function parseDebugLevel(flag: string): number {
   const trimmed = flag.trim();
   if (trimmed === "2" || trimmed === "verbose") return 2;
@@ -23,16 +34,123 @@ function parseDebugLevel(flag: string): number {
   return 0;
 }
 
+/**
+ * Get the OS-specific config directory.
+ */
+function getConfigDir(): string {
+  const platform = process.platform;
+  if (platform === "win32") {
+    return join(env.APPDATA || join(homedir(), "AppData", "Roaming"), "opencode");
+  }
+  const xdgConfig = env.XDG_CONFIG_HOME || join(homedir(), ".config");
+  return join(xdgConfig, "opencode");
+}
+
+/**
+ * Returns the logs directory, creating it if needed.
+ */
+function getLogsDir(customLogDir?: string): string {
+  const logsDir = customLogDir || join(getConfigDir(), "antigravity-logs");
+
+  try {
+    mkdirSync(logsDir, { recursive: true });
+  } catch {
+    // Directory may already exist or we don't have permission
+  }
+
+  return logsDir;
+}
+
+/**
+ * Builds a timestamped log file path.
+ */
+function createLogFilePath(customLogDir?: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return join(getLogsDir(customLogDir), `antigravity-debug-${timestamp}.log`);
+}
+
+/**
+ * Creates a log writer function that writes to a file.
+ */
+function createLogWriter(filePath?: string): (line: string) => void {
+  if (!filePath) {
+    return () => {};
+  }
+
+  try {
+    const stream = createWriteStream(filePath, { flags: "a" });
+    stream.on("error", () => {});
+    return (line: string) => {
+      const timestamp = new Date().toISOString();
+      const formatted = `[${timestamp}] ${line}`;
+      stream.write(`${formatted}\n`);
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Initialize or reinitialize debug state with the given config.
+ * Call this once at plugin startup after loading config.
+ */
+export function initializeDebug(config: AntigravityConfig): void {
+  // Config takes precedence, but env var can force enable for debugging
+  const envDebugFlag = env.OPENCODE_ANTIGRAVITY_DEBUG ?? "";
+  const debugLevel = config.debug ? (envDebugFlag === "2" || envDebugFlag === "verbose" ? 2 : 1) : parseDebugLevel(envDebugFlag);
+  const debugEnabled = debugLevel >= 1;
+  const verboseEnabled = debugLevel >= 2;
+  const logFilePath = debugEnabled ? createLogFilePath(config.log_dir) : undefined;
+  const logWriter = createLogWriter(logFilePath);
+
+  debugState = {
+    debugLevel,
+    debugEnabled,
+    verboseEnabled,
+    logFilePath,
+    logWriter,
+  };
+}
+
+/**
+ * Get the current debug state, initializing with defaults if needed.
+ * This allows the module to work even before initializeDebug is called.
+ */
+function getDebugState(): DebugState {
+  if (!debugState) {
+    // Fallback to env-based initialization for backward compatibility
+    const envDebugFlag = env.OPENCODE_ANTIGRAVITY_DEBUG ?? "";
+    const debugLevel = parseDebugLevel(envDebugFlag);
+    const debugEnabled = debugLevel >= 1;
+    const verboseEnabled = debugLevel >= 2;
+    const logFilePath = debugEnabled ? createLogFilePath() : undefined;
+    const logWriter = createLogWriter(logFilePath);
+
+    debugState = {
+      debugLevel,
+      debugEnabled,
+      verboseEnabled,
+      logFilePath,
+      logWriter,
+    };
+  }
+  return debugState;
+}
+
+// =============================================================================
+// Public API
+// =============================================================================
+
 export function isDebugEnabled(): boolean {
-  return debugEnabled;
+  return getDebugState().debugEnabled;
 }
 
 export function isVerboseEnabled(): boolean {
-  return verboseEnabled;
+  return getDebugState().verboseEnabled;
 }
 
 export function getLogFilePath(): string | undefined {
-  return logFilePath;
+  return getDebugState().logFilePath;
 }
 
 export interface AntigravityDebugContext {
@@ -61,10 +179,11 @@ interface AntigravityDebugResponseMeta {
 let requestCounter = 0;
 
 /**
- * Begins a debug trace for an Antigravity request, logging request metadata when debugging is enabled.
+ * Begins a debug trace for an Antigravity request.
  */
 export function startAntigravityDebugRequest(meta: AntigravityDebugRequestMeta): AntigravityDebugContext | null {
-  if (!debugEnabled) {
+  const state = getDebugState();
+  if (!state.debugEnabled) {
     return null;
   }
 
@@ -88,14 +207,15 @@ export function startAntigravityDebugRequest(meta: AntigravityDebugRequestMeta):
 }
 
 /**
- * Logs response details for a previously started debug trace when debugging is enabled.
+ * Logs response details for a previously started debug trace.
  */
 export function logAntigravityDebugResponse(
   context: AntigravityDebugContext | null | undefined,
   response: Response,
   meta: AntigravityDebugResponseMeta = {},
 ): void {
-  if (!debugEnabled || !context) {
+  const state = getDebugState();
+  if (!state.debugEnabled || !context) {
     return;
   }
 
@@ -185,7 +305,7 @@ function truncateForLog(text: string): string {
  * Writes a single debug line using the configured writer.
  */
 function logDebug(line: string): void {
-  logWriter(line);
+  getDebugState().logWriter(line);
 }
 
 /**
@@ -202,58 +322,6 @@ function formatError(error: unknown): string {
   }
 }
 
-/**
- * Returns the logs directory inside the opencode config folder.
- * Creates the directory if it doesn't exist.
- */
-function getLogsDir(): string {
-  const platform = process.platform;
-  let configDir: string;
-
-  if (platform === "win32") {
-    configDir = join(env.APPDATA || join(homedir(), "AppData", "Roaming"), "opencode");
-  } else {
-    const xdgConfig = env.XDG_CONFIG_HOME || join(homedir(), ".config");
-    configDir = join(xdgConfig, "opencode");
-  }
-
-  const logsDir = env.OPENCODE_ANTIGRAVITY_LOG_DIR || join(configDir, "antigravity-logs");
-
-  try {
-    mkdirSync(logsDir, { recursive: true });
-  } catch {
-    // Directory may already exist or we don't have permission
-  }
-
-  return logsDir;
-}
-
-/**
- * Builds a timestamped log file path in the opencode logs directory.
- */
-function defaultLogFilePath(): string {
-  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  return join(getLogsDir(), `antigravity-debug-${timestamp}.log`);
-}
-
-function createLogWriter(filePath?: string): (line: string) => void {
-  if (!filePath) {
-    return () => {};
-  }
-
-  try {
-    const stream = createWriteStream(filePath, { flags: "a" });
-    stream.on("error", () => {});
-    return (line: string) => {
-      const timestamp = new Date().toISOString();
-      const formatted = `[${timestamp}] ${line}`;
-      stream.write(`${formatted}\n`);
-    };
-  } catch {
-    return () => {};
-  }
-}
-
 export interface AccountDebugInfo {
   index: number;
   email?: string;
@@ -263,7 +331,7 @@ export interface AccountDebugInfo {
 }
 
 export function logAccountContext(label: string, info: AccountDebugInfo): void {
-  if (!debugEnabled) return;
+  if (!getDebugState().debugEnabled) return;
 
   const accountLabel = info.email
     ? info.email
@@ -286,7 +354,7 @@ export function logRateLimitEvent(
   retryAfterMs: number,
   bodyInfo: { message?: string; quotaResetTime?: string; retryDelayMs?: number | null; reason?: string },
 ): void {
-  if (!debugEnabled) return;
+  if (!getDebugState().debugEnabled) return;
   const accountLabel = email || `Account ${accountIndex + 1}`;
   logDebug(`[RateLimit] ${status} on ${accountLabel} family=${family} retryAfterMs=${retryAfterMs}`);
   if (bodyInfo.message) {
@@ -307,7 +375,7 @@ export function logRateLimitSnapshot(
   family: string,
   accounts: Array<{ index: number; email?: string; rateLimitResetTimes?: { claude?: number; gemini?: number } }>,
 ): void {
-  if (!debugEnabled) return;
+  if (!getDebugState().debugEnabled) return;
   const now = Date.now();
   const entries = accounts.map((account) => {
     const label = account.email ? account.email : `Account ${account.index + 1}`;
@@ -327,16 +395,17 @@ export async function logResponseBody(
   response: Response,
   status: number,
 ): Promise<string | undefined> {
-  if (!debugEnabled || !context) return undefined;
+  const state = getDebugState();
+  if (!state.debugEnabled || !context) return undefined;
   
   const isError = status >= 400;
-  const shouldLogBody = verboseEnabled || isError;
+  const shouldLogBody = state.verboseEnabled || isError;
   
   if (!shouldLogBody) return undefined;
   
   try {
     const text = await response.clone().text();
-    const maxChars = verboseEnabled ? MAX_BODY_VERBOSE_CHARS : MAX_BODY_PREVIEW_CHARS;
+    const maxChars = state.verboseEnabled ? MAX_BODY_VERBOSE_CHARS : MAX_BODY_PREVIEW_CHARS;
     const preview = text.length <= maxChars 
       ? text 
       : `${text.slice(0, maxChars)}... (truncated ${text.length - maxChars} chars)`;
@@ -349,11 +418,11 @@ export async function logResponseBody(
 }
 
 export function logModelFamily(url: string, extractedModel: string | null, family: string): void {
-  if (!debugEnabled) return;
+  if (!getDebugState().debugEnabled) return;
   logDebug(`[ModelFamily] url=${url} model=${extractedModel ?? "unknown"} family=${family}`);
 }
 
 export function debugLogToFile(message: string): void {
-  if (!debugEnabled) return;
+  if (!getDebugState().debugEnabled) return;
   logDebug(message);
 }
