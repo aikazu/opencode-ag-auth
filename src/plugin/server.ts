@@ -217,7 +217,7 @@ const successResponse = `<!DOCTYPE html>
       reject(error);
     };
     server.once("error", handleError);
-    server.listen(port, "127.0.0.1", () => {
+    server.listen(port, () => {
       server.off("error", handleError);
       resolve();
     });

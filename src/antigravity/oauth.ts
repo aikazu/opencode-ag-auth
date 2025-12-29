@@ -112,9 +112,24 @@ export async function authorizeAntigravity(projectId = ""): Promise<AntigravityA
   };
 }
 
+const FETCH_TIMEOUT_MS = 10000;
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function fetchProjectID(accessToken: string): Promise<string> {
   const errors: string[] = [];
-  // Use CLIProxy-aligned headers for project discovery to match "real" Antigravity clients.
   const loadHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
@@ -130,7 +145,7 @@ async function fetchProjectID(accessToken: string): Promise<string> {
   for (const baseEndpoint of loadEndpoints) {
     try {
       const url = `${baseEndpoint}/v1internal:loadCodeAssist`;
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: "POST",
         headers: loadHeaders,
         body: JSON.stringify({

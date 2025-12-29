@@ -91,19 +91,68 @@ function clearWarmupAttempt(sessionId: string): void {
   warmupAttemptedSessionIds.delete(sessionId);
 }
 
-async function openBrowser(url: string): Promise<void> {
+function isWSL(): boolean {
+  if (process.platform !== "linux") return false;
+  try {
+    const { readFileSync } = require("node:fs");
+    const release = readFileSync("/proc/version", "utf8").toLowerCase();
+    return release.includes("microsoft") || release.includes("wsl");
+  } catch {
+    return false;
+  }
+}
+
+function isWSL2(): boolean {
+  if (!isWSL()) return false;
+  try {
+    const { readFileSync } = require("node:fs");
+    const version = readFileSync("/proc/version", "utf8").toLowerCase();
+    return version.includes("wsl2") || version.includes("microsoft-standard");
+  } catch {
+    return false;
+  }
+}
+
+function isRemoteEnvironment(): boolean {
+  if (process.env.SSH_CLIENT || process.env.SSH_TTY || process.env.SSH_CONNECTION) {
+    return true;
+  }
+  if (process.env.REMOTE_CONTAINERS || process.env.CODESPACES) {
+    return true;
+  }
+  if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !isWSL()) {
+    return true;
+  }
+  return false;
+}
+
+function shouldSkipLocalServer(): boolean {
+  return isWSL2() || isRemoteEnvironment();
+}
+
+async function openBrowser(url: string): Promise<boolean> {
   try {
     if (process.platform === "darwin") {
       exec(`open "${url}"`);
-      return;
+      return true;
     }
     if (process.platform === "win32") {
-      exec(`start "${url}"`);
-      return;
+      exec(`start "" "${url}"`);
+      return true;
+    }
+    if (isWSL()) {
+      try {
+        exec(`wslview "${url}"`);
+        return true;
+      } catch {}
+    }
+    if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+      return false;
     }
     exec(`xdg-open "${url}"`);
+    return true;
   } catch {
-    // ignore
+    return false;
   }
 }
 
@@ -166,6 +215,24 @@ function parseOAuthCallbackInput(
 
     return { code: trimmed, state: fallbackState };
   }
+}
+
+async function promptManualOAuthInput(
+  fallbackState: string,
+): Promise<AntigravityTokenExchangeResult> {
+  console.log("1. Open the URL above in your browser and complete Google sign-in.");
+  console.log("2. After approving, copy the full redirected localhost URL from the address bar.");
+  console.log("3. Paste it back here.\n");
+
+  const callbackInput = await promptOAuthCallbackValue(
+    "Paste the redirect URL (or just the code) here: ",
+  );
+  const params = parseOAuthCallbackInput(callbackInput, fallbackState);
+  if ("error" in params) {
+    return { type: "failed", error: params.error };
+  }
+
+  return exchangeAntigravity(params.code, params.state);
 }
 
 function clampInt(value: number, min: number, max: number): number {
@@ -1481,6 +1548,8 @@ export const createAntigravityPlugin = (providerId: string) => async (
           // CLI flow (`opencode auth login`) passes an inputs object.
           if (inputs) {
             const accounts: Array<Extract<AntigravityTokenExchangeResult, { type: "success" }>> = [];
+            const noBrowser = inputs.noBrowser === "true" || inputs["no-browser"] === "true";
+            const useManualMode = noBrowser || shouldSkipLocalServer();
 
             // Check for existing accounts and prompt user for login mode
             let startFresh = true;
@@ -1507,6 +1576,20 @@ export const createAntigravityPlugin = (providerId: string) => async (
               const projectId = await promptProjectId();
 
               const result = await (async (): Promise<AntigravityTokenExchangeResult> => {
+                const authorization = await authorizeAntigravity(projectId);
+                const fallbackState = getStateFromAuthorizationUrl(authorization.url);
+
+                console.log("\nOAuth URL:\n" + authorization.url + "\n");
+
+                if (useManualMode) {
+                  const browserOpened = await openBrowser(authorization.url);
+                  if (!browserOpened) {
+                    console.log("Could not open browser automatically.");
+                    console.log("Please open the URL above manually in your local browser.\n");
+                  }
+                  return promptManualOAuthInput(fallbackState);
+                }
+
                 let listener: OAuthListener | null = null;
                 if (!isHeadless) {
                   try {
@@ -1516,18 +1599,37 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   }
                 }
 
-                const authorization = await authorizeAntigravity(projectId);
-                const fallbackState = getStateFromAuthorizationUrl(authorization.url);
-
-                console.log("\nOAuth URL:\n" + authorization.url + "\n");
-
                 if (!isHeadless) {
                   await openBrowser(authorization.url);
                 }
 
                 if (listener) {
                   try {
-                    const callbackUrl = await listener.waitForCallback();
+                    const SOFT_TIMEOUT_MS = 30000;
+                    const callbackPromise = listener.waitForCallback();
+                    const timeoutPromise = new Promise<never>((_, reject) =>
+                      setTimeout(() => reject(new Error("SOFT_TIMEOUT")), SOFT_TIMEOUT_MS)
+                    );
+
+                    let callbackUrl: URL;
+                    try {
+                      callbackUrl = await Promise.race([callbackPromise, timeoutPromise]);
+                    } catch (err) {
+                      if (err instanceof Error && err.message === "SOFT_TIMEOUT") {
+                        console.log("\n⏳ Automatic callback not received after 30 seconds.");
+                        console.log("You can paste the redirect URL manually.\n");
+                        console.log("OAuth URL (in case you need it again):");
+                        console.log(authorization.url + "\n");
+                        
+                        try {
+                          await listener.close();
+                        } catch {}
+                        
+                        return promptManualOAuthInput(fallbackState);
+                      }
+                      throw err;
+                    }
+
                     const params = extractOAuthCallbackParams(callbackUrl);
                     if (!params) {
                       return { type: "failed", error: "Missing code or state in callback URL" };
@@ -1535,6 +1637,12 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
                     return exchangeAntigravity(params.code, params.state);
                   } catch (error) {
+                    if (error instanceof Error && error.message !== "SOFT_TIMEOUT") {
+                      return {
+                        type: "failed",
+                        error: error.message,
+                      };
+                    }
                     return {
                       type: "failed",
                       error: error instanceof Error ? error.message : "Unknown error",
@@ -1542,27 +1650,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   } finally {
                     try {
                       await listener.close();
-                    } catch {
-                      // ignore
-                    }
+                    } catch {}
                   }
                 }
 
-                console.log("1. Open the URL below in your browser and complete Google sign-in.");
-                console.log(
-                  "2. After approving, copy the full redirected localhost URL from the address bar.",
-                );
-                console.log("3. Paste it back here.");
-
-                const callbackInput = await promptOAuthCallbackValue(
-                  "Paste the redirect URL (or just the code) here: ",
-                );
-                const params = parseOAuthCallbackInput(callbackInput, fallbackState);
-                if ("error" in params) {
-                  return { type: "failed", error: params.error };
-                }
-
-                return exchangeAntigravity(params.code, params.state);
+                return promptManualOAuthInput(fallbackState);
               })();
 
               if (result.type === "failed") {
@@ -1662,8 +1754,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
           const existingStorage = await loadAccounts();
           const existingCount = existingStorage?.accounts.length ?? 0;
 
+          const useManualFlow = isHeadless || shouldSkipLocalServer();
+
           let listener: OAuthListener | null = null;
-          if (!isHeadless) {
+          if (!useManualFlow) {
             try {
               listener = await startOAuthListener();
             } catch {
@@ -1674,8 +1768,12 @@ export const createAntigravityPlugin = (providerId: string) => async (
           const authorization = await authorizeAntigravity(projectId);
           const fallbackState = getStateFromAuthorizationUrl(authorization.url);
 
-          if (!isHeadless) {
-            await openBrowser(authorization.url);
+          if (!useManualFlow) {
+            const browserOpened = await openBrowser(authorization.url);
+            if (!browserOpened) {
+              listener?.close().catch(() => {});
+              listener = null;
+            }
           }
 
           if (listener) {
@@ -1685,8 +1783,26 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 "Complete sign-in in your browser. We'll automatically detect the redirect back to localhost.",
               method: "auto",
               callback: async (): Promise<AntigravityTokenExchangeResult> => {
+                const CALLBACK_TIMEOUT_MS = 30000;
                 try {
-                  const callbackUrl = await listener.waitForCallback();
+                  const callbackPromise = listener.waitForCallback();
+                  const timeoutPromise = new Promise<never>((_, reject) =>
+                    setTimeout(() => reject(new Error("CALLBACK_TIMEOUT")), CALLBACK_TIMEOUT_MS),
+                  );
+
+                  let callbackUrl: URL;
+                  try {
+                    callbackUrl = await Promise.race([callbackPromise, timeoutPromise]);
+                  } catch (err) {
+                    if (err instanceof Error && err.message === "CALLBACK_TIMEOUT") {
+                      return {
+                        type: "failed",
+                        error: "Callback timeout - please use CLI with --no-browser flag for manual input",
+                      };
+                    }
+                    throw err;
+                  }
+
                   const params = extractOAuthCallbackParams(callbackUrl);
                   if (!params) {
                     return { type: "failed", error: "Missing code or state in callback URL" };
@@ -1695,13 +1811,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   const result = await exchangeAntigravity(params.code, params.state);
                   if (result.type === "success") {
                     try {
-                      // TUI flow adds to existing accounts (non-destructive)
                       await persistAccountPool([result], false);
                     } catch {
-                      // ignore
                     }
 
-                    // Show appropriate toast message
                     const newTotal = existingCount + 1;
                     const toastMessage = existingCount > 0
                       ? `Added account${result.email ? ` (${result.email})` : ""} - ${newTotal} total`
@@ -1715,7 +1828,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         },
                       });
                     } catch {
-                      // TUI may not be available
                     }
                   }
 
@@ -1729,7 +1841,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   try {
                     await listener.close();
                   } catch {
-                    // ignore
                   }
                 }
               },
