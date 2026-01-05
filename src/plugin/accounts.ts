@@ -110,6 +110,10 @@ export class AccountManager {
     claude: -1,
     gemini: -1,
   };
+  private sessionOffsetApplied: Record<ModelFamily, boolean> = {
+    claude: false,
+    gemini: false,
+  };
   private lastToastAccountIndex = -1;
   private lastToastTime = 0;
 
@@ -289,6 +293,15 @@ export class AccountManager {
           return fresh;
         }
       }
+    }
+
+    // PID-based offset for multi-session distribution
+    // Different sessions (PIDs) will prefer different starting accounts
+    if (!this.sessionOffsetApplied[family] && this.accounts.length > 1) {
+      const pidOffset = process.pid % this.accounts.length;
+      const baseIndex = this.currentAccountIndexByFamily[family] ?? 0;
+      this.currentAccountIndexByFamily[family] = (baseIndex + pidOffset) % this.accounts.length;
+      this.sessionOffsetApplied[family] = true;
     }
 
     const current = this.getCurrentAccountForFamily(family);

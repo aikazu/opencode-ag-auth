@@ -19,12 +19,14 @@ export type {
 // Model resolution
 export {
   resolveModelWithTier,
+  resolveModelWithVariant,
   getModelFamily,
   MODEL_ALIASES,
   MODEL_FALLBACKS,
   THINKING_TIER_BUDGETS,
   GEMINI_3_THINKING_LEVELS,
 } from "./model-resolver";
+export type { VariantConfig } from "./model-resolver";
 
 // Claude transforms
 export {

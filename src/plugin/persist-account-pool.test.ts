@@ -23,6 +23,7 @@ vi.mock("node:fs", async () => {
       mkdir: vi.fn().mockResolvedValue(undefined),
       access: vi.fn(),
       unlink: vi.fn(),
+      rename: vi.fn().mockResolvedValue(undefined),
     },
   };
 });
@@ -320,11 +321,14 @@ describe("regression tests", () => {
       expect(result?.accounts[0]?.email).toBe("existing@example.com");
     });
 
-    it("should preserve all accounts when saving", async () => {
-      vi.mocked(fs.writeFile).mockResolvedValue(undefined);
-      vi.mocked(fs.mkdir).mockResolvedValue(undefined);
+  it("should preserve all accounts when saving", async () => {
+    const enoent = new Error("ENOENT") as NodeJS.ErrnoException;
+    enoent.code = "ENOENT";
+    vi.mocked(fs.readFile).mockRejectedValue(enoent);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fs.mkdir).mockResolvedValue(undefined);
 
-      const storage = createMockStorage([
+    const storage = createMockStorage([
         createMockAccount({ email: "user1@example.com", refreshToken: "token1" }),
         createMockAccount({ email: "user2@example.com", refreshToken: "token2" }),
         createMockAccount({ email: "user3@example.com", refreshToken: "token3" }),

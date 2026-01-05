@@ -249,3 +249,53 @@ export function getModelFamily(model: string): "claude" | "gemini-flash" | "gemi
   }
   return "gemini-pro";
 }
+
+/**
+ * Variant config from OpenCode's providerOptions.
+ */
+export interface VariantConfig {
+  thinkingBudget?: number;
+}
+
+/**
+ * Maps a thinking budget to Gemini 3 thinking level.
+ * ≤8192 → low, ≤16384 → medium, >16384 → high
+ */
+function budgetToGemini3Level(budget: number): "low" | "medium" | "high" {
+  if (budget <= 8192) return "low";
+  if (budget <= 16384) return "medium";
+  return "high";
+}
+
+/**
+ * Resolves model with variant config from providerOptions.
+ * Variant config takes priority over tier suffix in model name.
+ */
+export function resolveModelWithVariant(
+  requestedModel: string,
+  variantConfig?: VariantConfig
+): ResolvedModel {
+  const base = resolveModelWithTier(requestedModel);
+
+  if (!variantConfig?.thinkingBudget) {
+    return base;
+  }
+
+  const budget = variantConfig.thinkingBudget;
+  const isGemini3 = base.actualModel.toLowerCase().includes("gemini-3");
+
+  if (isGemini3) {
+    return {
+      ...base,
+      thinkingLevel: budgetToGemini3Level(budget),
+      thinkingBudget: undefined,
+      configSource: "variant",
+    };
+  }
+
+  return {
+    ...base,
+    thinkingBudget: budget,
+    configSource: "variant",
+  };
+}

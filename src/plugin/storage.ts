@@ -1,6 +1,8 @@
 import { promises as fs } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { randomBytes } from "node:crypto";
+import lockfile from "proper-lockfile";
 import type { HeaderStyle } from "../constants";
 import { createLogger } from "./logger";
 
@@ -95,6 +97,78 @@ function getConfigDir(): string {
 
 export function getStoragePath(): string {
   return join(getConfigDir(), "antigravity-accounts.json");
+}
+
+const LOCK_OPTIONS = {
+  stale: 10000,
+  retries: {
+    retries: 5,
+    minTimeout: 100,
+    maxTimeout: 1000,
+    factor: 2,
+  },
+};
+
+async function ensureFileExists(path: string): Promise<void> {
+  try {
+    await fs.access(path);
+  } catch {
+    await fs.mkdir(dirname(path), { recursive: true });
+    await fs.writeFile(path, JSON.stringify({ version: 3, accounts: [], activeIndex: 0 }, null, 2), "utf-8");
+  }
+}
+
+async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+  await ensureFileExists(path);
+  let release: (() => Promise<void>) | null = null;
+  try {
+    release = await lockfile.lock(path, LOCK_OPTIONS);
+    return await fn();
+  } finally {
+    if (release) {
+      try {
+        await release();
+      } catch (unlockError) {
+        log.warn("Failed to release lock", { error: String(unlockError) });
+      }
+    }
+  }
+}
+
+function mergeAccountStorage(existing: AccountStorageV3, incoming: AccountStorageV3): AccountStorageV3 {
+  const accountMap = new Map<string, AccountMetadataV3>();
+  
+  for (const acc of existing.accounts) {
+    if (acc.refreshToken) {
+      accountMap.set(acc.refreshToken, acc);
+    }
+  }
+  
+  for (const acc of incoming.accounts) {
+    if (acc.refreshToken) {
+      const existingAcc = accountMap.get(acc.refreshToken);
+      if (existingAcc) {
+        accountMap.set(acc.refreshToken, {
+          ...existingAcc,
+          ...acc,
+          rateLimitResetTimes: {
+            ...existingAcc.rateLimitResetTimes,
+            ...acc.rateLimitResetTimes,
+          },
+          lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
+        });
+      } else {
+        accountMap.set(acc.refreshToken, acc);
+      }
+    }
+  }
+  
+  return {
+    version: 3,
+    accounts: Array.from(accountMap.values()),
+    activeIndex: incoming.activeIndex,
+    activeIndexByFamily: incoming.activeIndexByFamily,
+  };
 }
 
 export function deduplicateAccountsByEmail<T extends { email?: string; lastUsed?: number; addedAt?: number }>(accounts: T[]): T[] {
@@ -284,10 +358,44 @@ export async function loadAccounts(): Promise<AccountStorageV3 | null> {
 
 export async function saveAccounts(storage: AccountStorageV3): Promise<void> {
   const path = getStoragePath();
-  await fs.mkdir(dirname(path), { recursive: true });
+  
+  await withFileLock(path, async () => {
+    const existing = await loadAccountsUnsafe();
+    const merged = existing ? mergeAccountStorage(existing, storage) : storage;
+    
+    const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+    const content = JSON.stringify(merged, null, 2);
+    
+    await fs.mkdir(dirname(path), { recursive: true });
+    await fs.writeFile(tempPath, content, "utf-8");
+    await fs.rename(tempPath, path);
+  });
+}
 
-  const content = JSON.stringify(storage, null, 2);
-  await fs.writeFile(path, content, "utf-8");
+async function loadAccountsUnsafe(): Promise<AccountStorageV3 | null> {
+  try {
+    const path = getStoragePath();
+    const content = await fs.readFile(path, "utf-8");
+    const parsed = JSON.parse(content);
+    
+    if (parsed.version === 1) {
+      return migrateV2ToV3(migrateV1ToV2(parsed));
+    }
+    if (parsed.version === 2) {
+      return migrateV2ToV3(parsed);
+    }
+    
+    return {
+      ...parsed,
+      accounts: deduplicateAccountsByEmail(parsed.accounts),
+    };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      return null;
+    }
+    return null;
+  }
 }
 
 export async function clearAccounts(): Promise<void> {

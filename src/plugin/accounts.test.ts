@@ -7,6 +7,7 @@ import type { OAuthAuthDetails } from "./types";
 describe("AccountManager", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    vi.stubGlobal("process", { ...process, pid: 0 });
   });
 
   it("treats on-disk storage as source of truth, even when empty", () => {
