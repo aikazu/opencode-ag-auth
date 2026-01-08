@@ -60,6 +60,12 @@
       "default": false,
       "description": "Enable fallback to alternate quota when primary quota is rate limited."
     },
+    "account_selection_strategy": {
+      "type": "string",
+      "enum": ["sticky", "round-robin", "hybrid"],
+      "default": "sticky",
+      "description": "Strategy for selecting accounts: sticky (same until rate-limited), round-robin (rotate each request), hybrid (fresh accounts first, then sticky). Env override: OPENCODE_ANTIGRAVITY_ACCOUNT_SELECTION_STRATEGY"
+    },
     "signature_cache": {
       "type": "object",
       "properties": {

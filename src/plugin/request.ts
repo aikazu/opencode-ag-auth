@@ -27,6 +27,7 @@ import {
   DEFAULT_THINKING_BUDGET,
   deepFilterThinkingBlocks,
   extractThinkingConfig,
+  extractVariantThinkingConfig,
   extractUsageFromSsePayload,
   extractUsageMetadata,
   fixToolResponseGrouping,
@@ -45,6 +46,7 @@ import {
 import {
   CLAUDE_TOOL_SYSTEM_INSTRUCTION,
   CLAUDE_DESCRIPTION_PROMPT,
+  ANTIGRAVITY_SYSTEM_INSTRUCTION,
 } from "../constants";
 import {
   analyzeConversationState,
@@ -52,8 +54,10 @@ import {
   needsThinkingRecovery,
 } from "./thinking-recovery";
 import { sanitizeCrossModelPayloadInPlace } from "./transform/cross-model-sanitizer";
+import { isGemini3Model } from "./transform";
 import {
   resolveModelWithTier,
+  resolveModelWithVariant,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -63,6 +67,8 @@ import { detectErrorType } from "./recovery";
 const log = createLogger("request");
 
 const PLUGIN_SESSION_ID = `-${crypto.randomUUID()}`;
+
+const sessionDisplayedThinkingHashes = new Set<string>();
 
 const MIN_SIGNATURE_LENGTH = 50;
 
@@ -632,9 +638,9 @@ export function prepareAntigravityRequest(
   const isClaude = isClaudeModel(resolved.actualModel);
   const isClaudeThinking = isClaudeThinkingModel(resolved.actualModel);
   
-  // Tier-based thinking configuration from model resolver
-  const tierThinkingBudget = resolved.thinkingBudget;
-  const tierThinkingLevel = resolved.thinkingLevel;
+  // Tier-based thinking configuration from model resolver (can be overridden by variant config)
+  let tierThinkingBudget = resolved.thinkingBudget;
+  let tierThinkingLevel = resolved.thinkingLevel;
   let signatureSessionKey = buildSignatureSessionKey(
     PLUGIN_SESSION_ID,
     effectiveModel,
@@ -722,6 +728,29 @@ export function prepareAntigravityRequest(
 
         const rawGenerationConfig = requestPayload.generationConfig as Record<string, unknown> | undefined;
         const extraBody = requestPayload.extra_body as Record<string, unknown> | undefined;
+
+        const variantConfig = extractVariantThinkingConfig(
+          requestPayload.providerOptions as Record<string, unknown> | undefined
+        );
+        const isGemini3 = effectiveModel.toLowerCase().includes("gemini-3");
+        
+        if (variantConfig?.thinkingLevel && isGemini3) {
+          // Gemini 3 native format - use thinkingLevel directly
+          tierThinkingLevel = variantConfig.thinkingLevel;
+          tierThinkingBudget = undefined;
+        } else if (variantConfig?.thinkingBudget) {
+          if (isGemini3) {
+            // Legacy format for Gemini 3 - convert with deprecation warning
+            log.warn("[Deprecated] Using thinkingBudget for Gemini 3 model. Use thinkingLevel instead.");
+            tierThinkingLevel = variantConfig.thinkingBudget <= 8192 ? "low" 
+              : variantConfig.thinkingBudget <= 16384 ? "medium" : "high";
+            tierThinkingBudget = undefined;
+          } else {
+            // Claude / Gemini 2.5 - use budget directly
+            tierThinkingBudget = variantConfig.thinkingBudget;
+            tierThinkingLevel = undefined;
+          }
+        }
 
         if (isClaude) {
           if (!requestPayload.toolConfig) {
@@ -1018,8 +1047,26 @@ export function prepareAntigravityRequest(
             }
             requestPayload.tools = finalTools.concat(passthroughTools);
           } else {
-            // Default normalization for non-Claude models
-            requestPayload.tools = requestPayload.tools.map((tool: any, toolIndex: number) => {
+            // Default normalization for non-Claude models (Gemini)
+            // First, flatten any functionDeclarations format into individual tools
+            const flattenedTools: any[] = [];
+            requestPayload.tools.forEach((tool: any) => {
+              if (Array.isArray(tool.functionDeclarations) && tool.functionDeclarations.length > 0) {
+                // Flatten functionDeclarations into individual tool entries
+                tool.functionDeclarations.forEach((decl: any) => {
+                  flattenedTools.push({
+                    name: decl.name,
+                    description: decl.description,
+                    // Convert parameters to input_schema for Gemini format
+                    input_schema: decl.parameters || decl.parametersJsonSchema || decl.input_schema || decl.inputSchema,
+                  });
+                });
+              } else {
+                flattenedTools.push(tool);
+              }
+            });
+
+            requestPayload.tools = flattenedTools.map((tool: any, toolIndex: number) => {
               const newTool = { ...tool };
 
               const schemaCandidates = [
@@ -1028,11 +1075,29 @@ export function prepareAntigravityRequest(
                 newTool.function?.inputSchema,
                 newTool.custom?.input_schema,
                 newTool.custom?.parameters,
-                newTool.parameters,
                 newTool.input_schema,
+                newTool.parameters,
                 newTool.inputSchema,
               ].filter(Boolean);
-              const schema = schemaCandidates[0];
+
+              const placeholderSchema = {
+                type: "object",
+                properties: {
+                  [EMPTY_SCHEMA_PLACEHOLDER_NAME]: {
+                    type: "boolean",
+                    description: EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
+                  },
+                },
+                required: [EMPTY_SCHEMA_PLACEHOLDER_NAME],
+                additionalProperties: false,
+              };
+
+              let schema: any = schemaCandidates[0];
+              const schemaObjectOk = schema && typeof schema === "object" && !Array.isArray(schema);
+              if (!schemaObjectOk) {
+                schema = placeholderSchema;
+                toolDebugMissing += 1;
+              }
 
               const nameCandidate =
                 newTool.name ||
@@ -1050,18 +1115,22 @@ export function prepareAntigravityRequest(
                 newTool.custom = {
                   name: newTool.function.name || nameCandidate,
                   description: newTool.function.description,
-                  input_schema: schema ?? { type: "object", properties: {}, additionalProperties: false },
+                  input_schema: schema,
                 };
               }
               if (!newTool.custom && !newTool.function) {
                 newTool.custom = {
                   name: nameCandidate,
                   description: newTool.description,
-                  input_schema: schema ?? { type: "object", properties: {}, additionalProperties: false },
+                  input_schema: schema,
                 };
+
+                if (!newTool.parameters && !newTool.input_schema && !newTool.inputSchema) {
+                  newTool.parameters = schema;
+                }
               }
               if (newTool.custom && !newTool.custom.input_schema) {
-                newTool.custom.input_schema = { type: "object", properties: {}, additionalProperties: false };
+                newTool.custom.input_schema = schema;
                 toolDebugMissing += 1;
               }
 
@@ -1069,13 +1138,17 @@ export function prepareAntigravityRequest(
                 `idx=${toolIndex}, hasCustom=${!!newTool.custom}, customSchema=${!!newTool.custom?.input_schema}, hasFunction=${!!newTool.function}, functionSchema=${!!newTool.function?.input_schema}`,
               );
 
-              // Strip custom wrappers for Gemini; only function-style is accepted.
-              if (newTool.custom) {
-                delete newTool.custom;
-              }
-
               return newTool;
             });
+
+            // Gemini 3 API requires: [{functionDeclarations: [{name, description, parameters}, ...]}]
+            const normalizedTools = requestPayload.tools as any[];
+            const geminiDeclarations = normalizedTools.map((tool: any) => ({
+              name: tool.name || tool.function?.name,
+              description: tool.description || tool.function?.description,
+              parameters: tool.parameters || tool.input_schema || tool.function?.parameters || tool.function?.input_schema,
+            }));
+            requestPayload.tools = [{ functionDeclarations: geminiDeclarations }];
           }
 
           try {
@@ -1110,6 +1183,9 @@ export function prepareAntigravityRequest(
         // Attempts to restore signatures from cache for multi-turn conversations
         // Handle both Gemini-style contents[] and Anthropic-style messages[] payloads.
         if (isClaude) {
+          // Step 0: Sanitize cross-model metadata (strips Gemini signatures when sending to Claude)
+          sanitizeCrossModelPayloadInPlace(requestPayload, { targetModel: effectiveModel });
+
           // Step 1: Strip corrupted/unsigned thinking blocks FIRST
           deepFilterThinkingBlocks(requestPayload, signatureSessionKey, getCachedSignature, true);
 
@@ -1246,13 +1322,43 @@ export function prepareAntigravityRequest(
         const effectiveProjectId = projectId?.trim() || generateSyntheticProjectId();
         resolvedProjectId = effectiveProjectId;
 
+        // Inject Antigravity system instruction with role "user" (CLIProxyAPI v6.6.89 compatibility)
+        // This sets request.systemInstruction.role = "user" and request.systemInstruction.parts[0].text
+        if (headerStyle === "antigravity") {
+          const existingSystemInstruction = requestPayload.systemInstruction;
+          if (existingSystemInstruction && typeof existingSystemInstruction === "object") {
+            const sys = existingSystemInstruction as Record<string, unknown>;
+            sys.role = "user";
+            if (Array.isArray(sys.parts) && sys.parts.length > 0) {
+              const firstPart = sys.parts[0] as Record<string, unknown>;
+              if (firstPart && typeof firstPart.text === "string") {
+                firstPart.text = ANTIGRAVITY_SYSTEM_INSTRUCTION + "\n\n" + firstPart.text;
+              } else {
+                sys.parts = [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION }, ...sys.parts];
+              }
+            } else {
+              sys.parts = [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION }];
+            }
+          } else if (typeof existingSystemInstruction === "string") {
+            requestPayload.systemInstruction = {
+              role: "user",
+              parts: [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION + "\n\n" + existingSystemInstruction }],
+            };
+          } else {
+            requestPayload.systemInstruction = {
+              role: "user",
+              parts: [{ text: ANTIGRAVITY_SYSTEM_INSTRUCTION }],
+            };
+          }
+        }
+
         const wrappedBody = {
           project: effectiveProjectId,
           model: effectiveModel,
           request: requestPayload,
+          requestType: "agent",
         };
 
-        // Add additional Antigravity fields
         Object.assign(wrappedBody, {
           userAgent: "antigravity",
           requestId: "agent-" + crypto.randomUUID(),
@@ -1423,6 +1529,7 @@ export async function transformAntigravityResponse(
         signatureSessionKey: sessionId,
         debugText,
         cacheSignatures,
+        displayedThinkingHashes: effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes : undefined,
       },
     );
     return new Response(response.body.pipeThrough(streamingTransformer), {

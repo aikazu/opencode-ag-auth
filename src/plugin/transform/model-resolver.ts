@@ -20,10 +20,10 @@ export const THINKING_TIER_BUDGETS = {
 
 /**
  * Gemini 3 uses thinkingLevel strings instead of numeric budgets.
- * Flash supports: low, medium, high
- * Pro supports: low, high
+ * Flash supports: minimal, low, medium, high
+ * Pro supports: low, high (no minimal/medium)
  */
-export const GEMINI_3_THINKING_LEVELS = ["low", "medium", "high"] as const;
+export const GEMINI_3_THINKING_LEVELS = ["minimal", "low", "medium", "high"] as const;
 
 /**
  * Model aliases - maps user-friendly names to API model names.
@@ -181,18 +181,50 @@ export function resolveModelWithTier(requestedModel: string): ResolvedModel {
   const isGemini3 = modelWithoutQuota.toLowerCase().startsWith("gemini-3");
   const skipAlias = isAntigravity && isGemini3;
 
+  // For Antigravity Gemini 3 Pro models without explicit tier, append default tier (-low)
+  // Antigravity API: gemini-3-pro requires tier suffix (gemini-3-pro-low/high)
+  //                  gemini-3-flash uses bare name + thinkingLevel param
+  const isGemini3Pro = modelWithoutQuota.toLowerCase().startsWith("gemini-3-pro");
+  const isGemini3Flash = modelWithoutQuota.toLowerCase().startsWith("gemini-3-flash");
+  
+  let antigravityModel = modelWithoutQuota;
+  if (skipAlias) {
+    if (isGemini3Pro && !tier) {
+      antigravityModel = `${modelWithoutQuota}-low`;
+    } else if (isGemini3Flash && tier) {
+      antigravityModel = baseName;
+    }
+  }
+
   const actualModel = skipAlias
-    ? modelWithoutQuota
+    ? antigravityModel
     : MODEL_ALIASES[modelWithoutQuota] || MODEL_ALIASES[baseName] || baseName;
 
   const resolvedModel = MODEL_FALLBACKS[actualModel] || actualModel;
   const isThinking = isThinkingCapableModel(resolvedModel);
 
+  // Check if this is a Gemini 3 model (works for both aliased and skipAlias paths)
+  const isEffectiveGemini3 = resolvedModel.toLowerCase().includes("gemini-3");
+  const isClaudeThinking = resolvedModel.toLowerCase().includes("claude") && resolvedModel.toLowerCase().includes("thinking");
+
   if (!tier) {
-    if (resolvedModel === "gemini-3-flash" && !skipAlias) {
+    // Gemini 3 models without explicit tier get a default thinkingLevel
+    if (isEffectiveGemini3) {
+      // Both Pro and Flash default to "low" per Google's API docs
       return {
         actualModel: resolvedModel,
-        thinkingLevel: "minimal",
+        thinkingLevel: "low",
+        isThinkingModel: true,
+        quotaPreference,
+        explicitQuota,
+      };
+    }
+    // Claude thinking models without explicit tier get max budget (32768)
+    // Per Anthropic docs, budget_tokens is required when enabling extended thinking
+    if (isClaudeThinking) {
+      return {
+        actualModel: resolvedModel,
+        thinkingBudget: THINKING_TIER_BUDGETS.claude.high,
         isThinkingModel: true,
         quotaPreference,
         explicitQuota,
@@ -201,20 +233,11 @@ export function resolveModelWithTier(requestedModel: string): ResolvedModel {
     return { actualModel: resolvedModel, isThinkingModel: isThinking, quotaPreference, explicitQuota };
   }
 
-  if (resolvedModel.includes("gemini-3") && !skipAlias) {
+  // Gemini 3 models with tier always get thinkingLevel set
+  if (isEffectiveGemini3) {
     return {
       actualModel: resolvedModel,
       thinkingLevel: tier,
-      tier,
-      isThinkingModel: true,
-      quotaPreference,
-      explicitQuota,
-    };
-  }
-
-  if (skipAlias) {
-    return {
-      actualModel: resolvedModel,
       tier,
       isThinkingModel: true,
       quotaPreference,
@@ -248,4 +271,65 @@ export function getModelFamily(model: string): "claude" | "gemini-flash" | "gemi
     return "gemini-flash";
   }
   return "gemini-pro";
+}
+
+/**
+ * Variant config from OpenCode's providerOptions.
+ */
+export interface VariantConfig {
+  thinkingBudget?: number;
+}
+
+/**
+ * Maps a thinking budget to Gemini 3 thinking level.
+ * ≤8192 → low, ≤16384 → medium, >16384 → high
+ */
+function budgetToGemini3Level(budget: number): "low" | "medium" | "high" {
+  if (budget <= 8192) return "low";
+  if (budget <= 16384) return "medium";
+  return "high";
+}
+
+/**
+ * Resolves model with variant config from providerOptions.
+ * Variant config takes priority over tier suffix in model name.
+ */
+export function resolveModelWithVariant(
+  requestedModel: string,
+  variantConfig?: VariantConfig
+): ResolvedModel {
+  const base = resolveModelWithTier(requestedModel);
+
+  if (!variantConfig?.thinkingBudget) {
+    return base;
+  }
+
+  const budget = variantConfig.thinkingBudget;
+  const isGemini3 = base.actualModel.toLowerCase().includes("gemini-3");
+
+  if (isGemini3) {
+    const level = budgetToGemini3Level(budget);
+    const isAntigravityGemini3Pro = base.quotaPreference === "antigravity" &&
+      base.actualModel.toLowerCase().startsWith("gemini-3-pro");
+
+    let actualModel = base.actualModel;
+    if (isAntigravityGemini3Pro) {
+      const baseModel = base.actualModel.replace(/-(low|medium|high)$/, "");
+      actualModel = `${baseModel}-${level}`;
+    }
+
+    return {
+      ...base,
+      actualModel,
+      thinkingLevel: level,
+      thinkingBudget: undefined,
+      configSource: "variant",
+    };
+  }
+
+  return {
+    ...base,
+    thinkingBudget: budget,
+    configSource: "variant",
+  };
 }

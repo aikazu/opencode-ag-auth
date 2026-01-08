@@ -307,7 +307,7 @@ describe("transform/gemini", () => {
         ],
       };
       const result = normalizeGeminiTools(payload);
-      expect(result.toolDebugMissing).toBe(0);
+      expect(result.toolDebugMissing).toBe(2);
     });
 
     it("generates debug summaries for each tool", () => {
@@ -450,7 +450,7 @@ describe("transform/gemini", () => {
         model: "gemini-2.5-flash",
       });
       expect(result.toolDebugSummaries).toHaveLength(2);
-      expect(result.toolDebugMissing).toBe(0);
+      expect(result.toolDebugMissing).toBe(1);
     });
 
     it("defaults includeThoughts to true when not specified", () => {

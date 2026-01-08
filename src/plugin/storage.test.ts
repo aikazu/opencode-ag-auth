@@ -2,6 +2,12 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { deduplicateAccountsByEmail, migrateV2ToV3, loadAccounts, type AccountMetadata, type AccountStorage } from "./storage";
 import { promises as fs } from "node:fs";
 
+vi.mock("proper-lockfile", () => ({
+  default: {
+    lock: vi.fn().mockResolvedValue(vi.fn().mockResolvedValue(undefined)),
+  },
+}));
+
 describe("deduplicateAccountsByEmail", () => {
   it("returns empty array for empty input", () => {
     const result = deduplicateAccountsByEmail([]);
@@ -124,8 +130,10 @@ vi.mock("node:fs", async () => {
       ...actual.promises,
       readFile: vi.fn(),
       writeFile: vi.fn(),
-      mkdir: vi.fn(),
+      mkdir: vi.fn().mockResolvedValue(undefined),
+      access: vi.fn().mockResolvedValue(undefined),
       unlink: vi.fn(),
+      rename: vi.fn().mockResolvedValue(undefined),
     },
   };
 });

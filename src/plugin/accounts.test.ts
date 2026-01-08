@@ -7,6 +7,7 @@ import type { OAuthAuthDetails } from "./types";
 describe("AccountManager", () => {
   beforeEach(() => {
     vi.useRealTimers();
+    vi.stubGlobal("process", { ...process, pid: 0 });
   });
 
   it("treats on-disk storage as source of truth, even when empty", () => {
@@ -629,6 +630,264 @@ describe("AccountManager", () => {
       expect(manager.isAccountCoolingDown(account!)).toBe(true);
       expect(manager.isRateLimitedForHeaderStyle(account!, "gemini", "antigravity")).toBe(false);
       expect(manager.isRateLimitedForHeaderStyle(account!, "gemini", "gemini-cli")).toBe(false);
+    });
+  });
+
+  describe("account selection strategies", () => {
+    describe("sticky strategy (default)", () => {
+      it("returns same account on consecutive calls", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "sticky");
+        const second = manager.getCurrentOrNextForFamily("claude", null, "sticky");
+        const third = manager.getCurrentOrNextForFamily("claude", null, "sticky");
+
+        expect(first?.index).toBe(0);
+        expect(second?.index).toBe(0);
+        expect(third?.index).toBe(0);
+      });
+
+      it("switches account only when current is rate-limited", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "sticky");
+        expect(first?.index).toBe(0);
+
+        manager.markRateLimited(first!, 60000, "claude");
+
+        const second = manager.getCurrentOrNextForFamily("claude", null, "sticky");
+        expect(second?.index).toBe(1);
+      });
+    });
+
+    describe("round-robin strategy", () => {
+      it("rotates to next account on each call", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r3", projectId: "p3", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+        const second = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+        const third = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+        const fourth = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+
+        const indices = [first?.index, second?.index, third?.index, fourth?.index];
+        expect(new Set(indices).size).toBeGreaterThanOrEqual(2);
+      });
+
+      it("skips rate-limited accounts", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r3", projectId: "p3", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const accounts = manager.getAccounts();
+        manager.markRateLimited(accounts[1]!, 60000, "claude");
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+        const second = manager.getCurrentOrNextForFamily("claude", null, "round-robin");
+
+        expect(first?.index).not.toBe(1);
+        expect(second?.index).not.toBe(1);
+      });
+    });
+
+    describe("hybrid strategy", () => {
+      it("returns fresh (untouched) accounts first", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r3", projectId: "p3", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+        const second = manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+        const third = manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+
+        const indices = [first?.index, second?.index, third?.index];
+        expect(indices).toContain(0);
+        expect(indices).toContain(1);
+        expect(indices).toContain(2);
+      });
+
+      it("falls back to sticky when all accounts touched", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+        manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+
+        const fourth = manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+        const fifth = manager.getCurrentOrNextForFamily("claude", null, "hybrid");
+
+        expect(fourth?.index).toBe(fifth?.index);
+      });
+    });
+  });
+
+  describe("touchedForQuota tracking", () => {
+    it("marks account as touched with timestamp", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(1000));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      manager.markTouchedForQuota(account, "claude:antigravity");
+
+      expect(account.touchedForQuota["claude:antigravity"]).toBe(1000);
+    });
+
+    it("isFreshForQuota returns true for untouched accounts", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      expect(manager.isFreshForQuota(account, "claude:antigravity")).toBe(true);
+    });
+
+    it("isFreshForQuota returns false for recently touched accounts", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(1000));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      manager.markTouchedForQuota(account, "claude:antigravity");
+
+      expect(manager.isFreshForQuota(account, "claude:antigravity")).toBe(false);
+    });
+
+    it("isFreshForQuota returns true after quota reset time passes", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(1000));
+
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      manager.markTouchedForQuota(account, "claude");
+      expect(manager.isFreshForQuota(account, "claude")).toBe(false);
+      
+      manager.markRateLimited(account, 60000, "claude", "antigravity");
+      
+      vi.setSystemTime(new Date(70000));
+      expect(manager.isFreshForQuota(account, "claude")).toBe(true);
+    });
+  });
+
+  describe("consecutiveFailures tracking", () => {
+    it("initializes consecutiveFailures as undefined", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      expect(account.consecutiveFailures).toBeUndefined();
+    });
+
+    it("can increment and reset consecutiveFailures", () => {
+      const stored: AccountStorageV3 = {
+        version: 3,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const account = manager.getAccounts()[0]!;
+
+      account.consecutiveFailures = (account.consecutiveFailures ?? 0) + 1;
+      expect(account.consecutiveFailures).toBe(1);
+
+      account.consecutiveFailures = (account.consecutiveFailures ?? 0) + 1;
+      expect(account.consecutiveFailures).toBe(2);
+
+      account.consecutiveFailures = 0;
+      expect(account.consecutiveFailures).toBe(0);
     });
   });
 });

@@ -97,4 +97,6 @@ export interface ResolvedModel {
   quotaPreference?: HeaderStyle;
   /** Whether user explicitly specified quota via suffix (vs default selection) */
   explicitQuota?: boolean;
+  /** Source of thinking config: "variant" (providerOptions) or "tier" (model suffix) */
+  configSource?: "variant" | "tier";
 }

@@ -86,7 +86,25 @@ export function normalizeGeminiTools(
       newTool.input_schema,
       newTool.inputSchema,
     ].filter(Boolean);
-    const schema = schemaCandidates[0] as Record<string, unknown> | undefined;
+
+    const placeholderSchema: Record<string, unknown> = {
+      type: "object",
+      properties: {
+        _placeholder: {
+          type: "boolean",
+          description: "Placeholder. Always pass true.",
+        },
+      },
+      required: ["_placeholder"],
+      additionalProperties: false,
+    };
+
+    let schema = schemaCandidates[0] as Record<string, unknown> | undefined;
+    const schemaObjectOk = schema && typeof schema === "object" && !Array.isArray(schema);
+    if (!schemaObjectOk) {
+      schema = placeholderSchema;
+      toolDebugMissing += 1;
+    }
 
     const nameCandidate =
       newTool.name ||
@@ -110,17 +128,21 @@ export function normalizeGeminiTools(
       newTool.custom = {
         name: fn.name || nameCandidate,
         description: fn.description,
-        input_schema: schema ?? { type: "object", properties: {}, additionalProperties: false },
+        input_schema: schema,
       };
     }
-    
+
     // Create custom if both missing
     if (!newTool.custom && !newTool.function) {
       newTool.custom = {
         name: nameCandidate,
         description: newTool.description,
-        input_schema: schema ?? { type: "object", properties: {}, additionalProperties: false },
+        input_schema: schema,
       };
+
+      if (!newTool.parameters && !newTool.input_schema && !newTool.inputSchema) {
+        newTool.parameters = schema;
+      }
     }
     
     // Ensure custom has input_schema

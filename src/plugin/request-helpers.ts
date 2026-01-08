@@ -774,6 +774,54 @@ export function extractThinkingConfig(
 }
 
 /**
+ * Variant thinking config extracted from OpenCode's providerOptions.
+ */
+export interface VariantThinkingConfig {
+  /** Gemini 3 native thinking level (low/medium/high) */
+  thinkingLevel?: string;
+  /** Numeric thinking budget for Claude and Gemini 2.5 */
+  thinkingBudget?: number;
+  /** Whether to include thoughts in output */
+  includeThoughts?: boolean;
+}
+
+/**
+ * Extracts variant thinking config from OpenCode's providerOptions.
+ * 
+ * All Antigravity models route through the Google provider, so we only check
+ * providerOptions.google. Supports two formats:
+ * 
+ * 1. Gemini 3 native: { google: { thinkingLevel: "high", includeThoughts: true } }
+ * 2. Budget-based (Claude/Gemini 2.5): { google: { thinkingConfig: { thinkingBudget: 32000 } } }
+ */
+export function extractVariantThinkingConfig(
+  providerOptions: Record<string, unknown> | undefined
+): VariantThinkingConfig | undefined {
+  if (!providerOptions) return undefined;
+
+  const google = providerOptions.google as Record<string, unknown> | undefined;
+  if (!google) return undefined;
+
+  // Gemini 3 native format: { google: { thinkingLevel: "high", includeThoughts: true } }
+  if (typeof google.thinkingLevel === "string") {
+    return {
+      thinkingLevel: google.thinkingLevel,
+      includeThoughts: typeof google.includeThoughts === "boolean" ? google.includeThoughts : undefined,
+    };
+  }
+
+  // Budget-based format (Claude/Gemini 2.5): { google: { thinkingConfig: { thinkingBudget } } }
+  if (google.thinkingConfig && typeof google.thinkingConfig === "object") {
+    const tc = google.thinkingConfig as Record<string, unknown>;
+    if (typeof tc.thinkingBudget === "number") {
+      return { thinkingBudget: tc.thinkingBudget };
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Determines the final thinking configuration based on model capabilities and user settings.
  * For Claude thinking models, we keep thinking enabled even in multi-turn conversations.
  * The filterUnsignedThinkingBlocks function will handle signature validation/restoration.
@@ -958,35 +1006,42 @@ function stripCacheControlRecursively(obj: unknown): unknown {
 /**
  * Sanitizes a thinking part by keeping only the allowed fields.
  * In particular, ensures `thinking` is a string (not an object with cache_control).
+ * Returns null if the thinking block has no valid content.
  */
-function sanitizeThinkingPart(part: Record<string, unknown>): Record<string, unknown> {
+function sanitizeThinkingPart(part: Record<string, unknown>): Record<string, unknown> | null {
   // Gemini-style thought blocks: { thought: true, text, thoughtSignature }
   if (part.thought === true) {
-    const sanitized: Record<string, unknown> = { thought: true };
-
-    if (part.text !== undefined) {
-      if (typeof part.text === "object" && part.text !== null) {
-        const maybeText = (part.text as any).text;
-        sanitized.text = typeof maybeText === "string" ? maybeText : part.text;
-      } else {
-        sanitized.text = part.text;
-      }
+    let textContent: unknown = part.text;
+    if (typeof textContent === "object" && textContent !== null) {
+      const maybeText = (textContent as any).text;
+      textContent = typeof maybeText === "string" ? maybeText : undefined;
     }
 
+    const hasContent = typeof textContent === "string" && textContent.trim().length > 0;
+    if (!hasContent && !part.thoughtSignature) {
+      return null;
+    }
+
+    const sanitized: Record<string, unknown> = { thought: true };
+    if (textContent !== undefined) sanitized.text = textContent;
     if (part.thoughtSignature !== undefined) sanitized.thoughtSignature = part.thoughtSignature;
     return sanitized;
   }
 
   // Anthropic-style thinking/redacted_thinking blocks: { type: "thinking"|"redacted_thinking", thinking, signature }
   if (part.type === "thinking" || part.type === "redacted_thinking" || part.thinking !== undefined) {
-    const sanitized: Record<string, unknown> = { type: part.type === "redacted_thinking" ? "redacted_thinking" : "thinking" };
-
     let thinkingContent: unknown = part.thinking ?? part.text;
     if (thinkingContent !== undefined && typeof thinkingContent === "object" && thinkingContent !== null) {
       const maybeText = (thinkingContent as any).text ?? (thinkingContent as any).thinking;
-      thinkingContent = typeof maybeText === "string" ? maybeText : "";
+      thinkingContent = typeof maybeText === "string" ? maybeText : undefined;
     }
 
+    const hasContent = typeof thinkingContent === "string" && thinkingContent.trim().length > 0;
+    if (!hasContent && !part.signature) {
+      return null;
+    }
+
+    const sanitized: Record<string, unknown> = { type: part.type === "redacted_thinking" ? "redacted_thinking" : "thinking" };
     if (thinkingContent !== undefined) sanitized.thinking = thinkingContent;
     if (part.signature !== undefined) sanitized.signature = part.signature;
     return sanitized;
@@ -994,17 +1049,19 @@ function sanitizeThinkingPart(part: Record<string, unknown>): Record<string, unk
 
   // Reasoning blocks (OpenCode format): { type: "reasoning", text, signature }
   if (part.type === "reasoning") {
-    const sanitized: Record<string, unknown> = { type: "reasoning" };
-
-    if (part.text !== undefined) {
-      if (typeof part.text === "object" && part.text !== null) {
-        const maybeText = (part.text as any).text;
-        sanitized.text = typeof maybeText === "string" ? maybeText : part.text;
-      } else {
-        sanitized.text = part.text;
-      }
+    let textContent: unknown = part.text;
+    if (typeof textContent === "object" && textContent !== null) {
+      const maybeText = (textContent as any).text;
+      textContent = typeof maybeText === "string" ? maybeText : undefined;
     }
 
+    const hasContent = typeof textContent === "string" && textContent.trim().length > 0;
+    if (!hasContent && !part.signature) {
+      return null;
+    }
+
+    const sanitized: Record<string, unknown> = { type: "reasoning" };
+    if (textContent !== undefined) sanitized.text = textContent;
     if (part.signature !== undefined) sanitized.signature = part.signature;
     return sanitized;
   }
@@ -1066,7 +1123,8 @@ function filterContentArray(
     }
 
     if (isOurCachedSignature(item, sessionId, getCachedSignatureFn)) {
-      filtered.push(sanitizeThinkingPart(item));
+      const sanitized = sanitizeThinkingPart(item);
+      if (sanitized) filtered.push(sanitized);
       continue;
     }
 
@@ -1081,7 +1139,8 @@ function filterContentArray(
           } else {
             (restoredPart as any).signature = cachedSignature;
           }
-          filtered.push(sanitizeThinkingPart(restoredPart as Record<string, unknown>));
+          const sanitized = sanitizeThinkingPart(restoredPart as Record<string, unknown>);
+          if (sanitized) filtered.push(sanitized);
           continue;
         }
       }
@@ -1709,26 +1768,63 @@ export function isMeaningfulSseLine(line: string): boolean {
  * in tool arguments, which can cause downstream parsing issues.
  * 
  * @param obj - The object to recursively parse
+ * @param skipParseKeys - Set of keys whose values should NOT be parsed as JSON (preserved as strings)
+ * @param currentKey - The current key being processed (internal use)
  * @returns The parsed object with JSON strings expanded
  */
-export function recursivelyParseJsonStrings(obj: unknown): unknown {
+// Keys whose string values should NOT be parsed as JSON - they contain literal text content
+const SKIP_PARSE_KEYS = new Set([
+  "oldString",
+  "newString",
+  "content",
+  "filePath",
+  "path",
+  "text",
+  "code",
+  "source",
+  "data",
+  "body",
+  "message",
+  "prompt",
+  "input",
+  "output",
+  "result",
+  "value",
+  "query",
+  "pattern",
+  "replacement",
+  "template",
+  "script",
+  "command",
+  "snippet",
+]);
+
+export function recursivelyParseJsonStrings(
+  obj: unknown,
+  skipParseKeys: Set<string> = SKIP_PARSE_KEYS,
+  currentKey?: string,
+): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
 
   if (Array.isArray(obj)) {
-    return obj.map(recursivelyParseJsonStrings);
+    return obj.map((item) => recursivelyParseJsonStrings(item, skipParseKeys));
   }
 
   if (typeof obj === "object") {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj)) {
-      result[key] = recursivelyParseJsonStrings(value);
+      result[key] = recursivelyParseJsonStrings(value, skipParseKeys, key);
     }
     return result;
   }
 
   if (typeof obj !== "string") {
+    return obj;
+  }
+
+  if (currentKey && skipParseKeys.has(currentKey)) {
     return obj;
   }
 

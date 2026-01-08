@@ -390,7 +390,8 @@ describe("request.ts", () => {
     const callTransformSseLine = (line: string) => {
       const store = createMockSignatureStore();
       const buffer = createMockThoughtBuffer();
-      return transformSseLine(line, store, buffer, defaultCallbacks, defaultOptions, { ...defaultDebugState });
+      const sentBuffer = createMockThoughtBuffer();
+      return transformSseLine(line, store, buffer, sentBuffer, defaultCallbacks, defaultOptions, { ...defaultDebugState });
     };
 
     it("returns empty lines unchanged", () => {
