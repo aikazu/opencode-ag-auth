@@ -544,6 +544,39 @@ Try add this line to in `google` field under `provider`
 ### Error during the session
 If you encounter error during the session, try chat `continue` the recover session mechanism should be trigger and you can continue the session, if the error blocked the session please workaround by use command `/undo` to revert to the state before the error and try again it should work
 
+### Error using Gemini CLI models
+When using Gemini CLI models, you may come across an error with the below text: 
+> Permission 'cloudaicompanion.companions.generateChat' denied on resource '//cloudaicompanion.googleapis.com/projects/rising-fact-p41fc/locations/global' (or it may not exist).
+
+The plugin attempts to provision or find a suitable Google Cloud project when authenticating with Antigravity. If none is found, it defaults to a predefined project ID set by the `ANTIGRAVITY_DEFAULT_PROJECT_ID` variable in this project. While this works for Antigravity, Gemini CLI throws an error because this project ID does not exist in your Google Cloud account.
+
+For it to work, you can follow similar steps in [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth?tab=readme-ov-file#manual-google-cloud-setup):
+* Go to the [Google Cloud Console](https://console.cloud.google.com/).
+* Create or select a project.
+* Enable the Gemini for Google Cloud API (cloudaicompanion.googleapis.com).
+* Configure the projectId in your Opencode config as shown above. 
+
+Then you add the project ID to your `~/.config/opencode/antigravity-accounts.json` setup under your account, you can add it as a `projectId` field:
+```json
+{
+  "version": 3,
+  "accounts": [
+    {
+      "email": "<<your email>>",
+      "refreshToken": "<<your refresher token>>",
+      "projectId": "<<place project ID here>>"
+    }
+  ],
+  "activeIndex": 0,
+  "activeIndexByFamily": {
+    "claude": 0,
+    "gemini": 0
+  }
+}
+```
+
+**Note**: This would have to be done per account if you have a multi-account setup. 
+
 <details>
 <summary><b>Safari OAuth Callback Fails (macOS)</b></summary>
 
