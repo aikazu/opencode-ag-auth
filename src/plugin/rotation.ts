@@ -377,7 +377,7 @@ function calculatePriorityScore(
   // Cap the "freshness" bonus at 1 hour
   const freshnessComponent = Math.min(secondsSinceUsed, 3600) * 0.1;
 
-  return healthComponent + tokenComponent + freshnessComponent;
+  return Math.max(0, healthComponent + tokenComponent + freshnessComponent);
 }
 
 /**
