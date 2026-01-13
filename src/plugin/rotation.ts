@@ -431,6 +431,15 @@ export function selectPriorityQueueAccount(
   // Weights: #1=40%, #2=30%, #3=20%, etc roughly
   // Simple approach: score is the weight
   const totalScore = topCandidates.reduce((sum, item) => sum + item.score, 0);
+
+  // Edge case: If all scores are zero or negative, fall back to first candidate
+  // This shouldn't happen in practice since calculatePriorityScore() returns
+  // positive values (health: 0-200, tokens: 0-500, freshness: 0-360), but
+  // we handle it defensively to avoid infinite loops or undefined behavior.
+  if (totalScore <= 0) {
+    return topCandidates[0]!.acc.index;
+  }
+
   let randomValue = Math.random() * totalScore;
   
   for (const item of topCandidates) {
