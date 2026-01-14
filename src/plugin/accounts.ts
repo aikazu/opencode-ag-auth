@@ -620,7 +620,12 @@ export class AccountManager {
 
   updateFromAuth(account: ManagedAccount, auth: OAuthAuthDetails): void {
     const parts = parseRefreshParts(auth.refresh);
-    account.parts = parts;
+    // Preserve existing projectId/managedProjectId if not in the new parts
+    account.parts = {
+      ...parts,
+      projectId: parts.projectId ?? account.parts.projectId,
+      managedProjectId: parts.managedProjectId ?? account.parts.managedProjectId,
+    };
     account.access = auth.access;
     account.expires = auth.expires;
   }
