@@ -769,6 +769,101 @@ describe("AccountManager", () => {
         expect(fourth?.index).toBe(fifth?.index);
       });
     });
+
+    describe("priority-queue strategy", () => {
+      it("returns account based on health and token availability", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r3", projectId: "p3", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const first = manager.getCurrentOrNextForFamily("claude", null, "priority-queue");
+        expect(first).not.toBeNull();
+        expect([0, 1, 2]).toContain(first?.index);
+      });
+
+      it("skips rate-limited accounts", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const accounts = manager.getAccounts();
+        manager.markRateLimited(accounts[0]!, 60000, "claude");
+
+        const selected = manager.getCurrentOrNextForFamily("claude", null, "priority-queue");
+        expect(selected?.index).toBe(1);
+      });
+
+      it("skips cooling down accounts", () => {
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const accounts = manager.getAccounts();
+        manager.markAccountCoolingDown(accounts[0]!, 60000, "auth-failure");
+
+        const selected = manager.getCurrentOrNextForFamily("claude", null, "priority-queue");
+        expect(selected?.index).toBe(1);
+      });
+
+      it("falls back to sticky when all accounts unavailable", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(0));
+
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+
+        const selected = manager.getCurrentOrNextForFamily("claude", null, "priority-queue");
+        expect(selected?.index).toBe(0);
+      });
+
+      it("updates lastUsed and currentAccountIndexByFamily on selection", () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(5000));
+
+        const stored: AccountStorageV3 = {
+          version: 3,
+          accounts: [
+            { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+            { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
+          ],
+          activeIndex: 0,
+        };
+
+        const manager = new AccountManager(undefined, stored);
+        const selected = manager.getCurrentOrNextForFamily("claude", null, "priority-queue");
+
+        expect(selected).not.toBeNull();
+        expect(selected!.lastUsed).toBe(5000);
+        expect(manager.getCurrentAccountForFamily("claude")?.index).toBe(selected?.index);
+      });
+    });
   });
 
   describe("touchedForQuota tracking", () => {
