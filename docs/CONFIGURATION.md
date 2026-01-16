@@ -39,21 +39,21 @@ Settings that affect how the model thinks and responds.
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `keep_thinking` | `true` | Preserve Claude's thinking blocks across turns. Makes model smarter/more coherent. |
+| `keep_thinking` | `false` | Preserve Claude's thinking blocks across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool_result_missing errors |
-| `auto_resume` | `true` | Auto-send resume prompt after recovery |
+| `auto_resume` | `false` | Auto-send resume prompt after recovery |
 | `resume_text` | `"continue"` | Text to send when auto-resuming |
 | `web_search.default_mode` | `"off"` | Gemini Google Search grounding: `"auto"` or `"off"` |
 | `web_search.grounding_threshold` | `0.3` | How often to search (0=always, 1=never). Only in `auto` mode. |
 
 ### About `keep_thinking`
 
-When `true` (default), Claude's thinking blocks are preserved in conversation history:
+When `true`, Claude's thinking blocks are preserved in conversation history:
 - **Pros:** Model remembers its reasoning, more coherent across turns
-- **Cons:** Slightly larger context
+- **Cons:** May degrade model stability, slightly larger context
 
-When `false`, thinking is stripped:
-- **Pros:** Smaller context
+When `false` (default), thinking is stripped:
+- **Pros:** More stable model behavior, smaller context
 - **Cons:** Model may be less coherent, forgets previous reasoning
 
 ---
@@ -171,12 +171,17 @@ Copy-paste ready configs with all recommended settings enabled.
 These settings are already `true` by default — you don't need to set them:
 
 | Setting | Default | What it does |
-|---------|---------|--------------|
-| `keep_thinking` | `true` | Smarter Claude (preserves reasoning) |
+|---------|---------|--------------
 | `session_recovery` | `true` | Auto-recover from errors |
-| `auto_resume` | `true` | Auto-continue after recovery |
 | `auto_update` | `true` | Keep plugin updated |
 | `switch_on_first_rate_limit` | `true` | Fast account switching |
+
+These settings are `false` by default:
+
+| Setting | Default | What it does |
+|---------|---------|--------------
+| `keep_thinking` | `false` | Preserve Claude thinking (may degrade stability) |
+| `auto_resume` | `false` | Auto-continue after recovery |
 
 ---
 

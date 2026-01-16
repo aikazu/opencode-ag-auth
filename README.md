@@ -528,8 +528,8 @@ Most users don't need to configure anything — defaults work well.
 ### Model Behavior
 
 | Option | Default | What it does |
-|--------|---------|--------------|
-| `keep_thinking` | `true` | Preserve Claude's thinking across turns (smarter model) |
+|--------|---------|--------------
+| `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool errors |
 | `web_search.default_mode` | `"off"` | Gemini Google Search: `"auto"` or `"off"` |
 
