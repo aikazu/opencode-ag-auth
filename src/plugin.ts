@@ -372,17 +372,47 @@ function retryAfterMsFromResponse(response: Response, defaultRetryMs: number = 6
   return defaultRetryMs;
 }
 
+/**
+ * Parse Go-style duration strings to milliseconds.
+ * Supports compound durations: "1h16m0.667s", "1.5s", "200ms", "5m30s"
+ * 
+ * @param duration - Duration string in Go format
+ * @returns Duration in milliseconds, or null if parsing fails
+ */
 function parseDurationToMs(duration: string): number | null {
-  const match = duration.match(/^(\d+(?:\.\d+)?)(s|m|h)?$/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]!);
-  const unit = (match[2] || "s").toLowerCase();
-  switch (unit) {
-    case "h": return value * 3600 * 1000;
-    case "m": return value * 60 * 1000;
-    case "s": return value * 1000;
-    default: return value * 1000;
+  // Handle simple formats first for backwards compatibility
+  const simpleMatch = duration.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i);
+  if (simpleMatch) {
+    const value = parseFloat(simpleMatch[1]!);
+    const unit = (simpleMatch[2] || "s").toLowerCase();
+    switch (unit) {
+      case "h": return value * 3600 * 1000;
+      case "m": return value * 60 * 1000;
+      case "s": return value * 1000;
+      case "ms": return value;
+      default: return value * 1000;
+    }
   }
+  
+  // Parse compound Go-style durations: "1h16m0.667s", "5m30s", etc.
+  const compoundRegex = /(\d+(?:\.\d+)?)(h|m(?!s)|s|ms)/gi;
+  let totalMs = 0;
+  let matchFound = false;
+  let match;
+  
+  while ((match = compoundRegex.exec(duration)) !== null) {
+    matchFound = true;
+    const value = parseFloat(match[1]!);
+    const unit = match[2]!.toLowerCase();
+    switch (unit) {
+      case "h": totalMs += value * 3600 * 1000; break;
+      case "m": totalMs += value * 60 * 1000; break;
+      case "s": totalMs += value * 1000; break;
+      case "ms": totalMs += value; break;
+    }
+  }
+  
+  return matchFound ? totalMs : null;
 }
 
 interface RateLimitBodyInfo {
