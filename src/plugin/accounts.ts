@@ -366,7 +366,7 @@ export class AccountManager {
   }
 
   getEnabledAccounts(): ManagedAccount[] {
-    return this.accounts.filter((account) => account.enabled);
+    return this.accounts.filter((account) => account.enabled !== false);
   }
 
   getAccountsSnapshot(): ManagedAccount[] {
