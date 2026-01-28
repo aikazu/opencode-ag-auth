@@ -134,7 +134,10 @@ async function triggerAsyncQuotaRefreshForAccount(
   try {
     const accountsForCheck = accountManager.getAccountsForQuotaCheck();
     const singleAccount = accountsForCheck[accountIndex];
-    if (!singleAccount) return;
+    if (!singleAccount) {
+      quotaRefreshInProgressByEmail.delete(accountKey);
+      return;
+    }
     
     const results = await checkAccountsQuota([singleAccount], client, providerId);
     
