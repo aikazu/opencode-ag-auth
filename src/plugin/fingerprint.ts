@@ -19,7 +19,7 @@ const OS_VERSIONS: Record<string, string[]> = {
 
 const ARCHITECTURES = ["x64", "arm64"];
 
-const ANTIGRAVITY_VERSIONS = ["1.10.0", "1.10.5", "1.11.0", "1.11.2", "1.11.5", "1.12.0", "1.12.1"];
+const ANTIGRAVITY_VERSIONS = ["1.14.0", "1.14.5", "1.15.0", "1.15.2", "1.15.5", "1.15.8"];
 
 const IDE_TYPES = [
   "IDE_UNSPECIFIED",
@@ -155,7 +155,7 @@ export function collectCurrentFingerprint(): Fingerprint {
   return {
     deviceId: generateDeviceId(),
     sessionToken: generateSessionToken(),
-    userAgent: `antigravity/1.11.5 ${platform}/${arch}`,
+    userAgent: `antigravity/1.15.8 ${platform}/${arch}`,
     apiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
     clientMetadata: {
       ideType: "VSCODE",
