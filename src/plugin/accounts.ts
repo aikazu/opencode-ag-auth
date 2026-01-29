@@ -749,32 +749,24 @@ export class AccountManager {
       return false;
     }
 
-    for (const account of this.accounts) {
+    return this.accounts.some(acc => {
       // Skip current account
-      if (account.index === currentAccountIndex) {
-        continue;
+      if (acc.index === currentAccountIndex) {
+        return false;
       }
-
       // Skip disabled accounts
-      if (account.enabled === false) {
-        continue;
+      if (acc.enabled === false) {
+        return false;
       }
-
       // Skip cooling down accounts
-      if (this.isAccountCoolingDown(account)) {
-        continue;
+      if (this.isAccountCoolingDown(acc)) {
+        return false;
       }
-
       // Clear expired rate limits before checking
-      clearExpiredRateLimits(account);
-
-      // Check if this account has antigravity available
-      if (!isRateLimitedForHeaderStyle(account, family, "antigravity", model)) {
-        return true;
-      }
-    }
-
-    return false;
+      clearExpiredRateLimits(acc);
+      // Check if antigravity is available for this account
+      return !isRateLimitedForHeaderStyle(acc, family, "antigravity", model);
+    });
   }
 
   removeAccount(account: ManagedAccount): boolean {
