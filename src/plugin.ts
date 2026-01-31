@@ -36,7 +36,7 @@ import { clearAccounts, loadAccounts, saveAccounts } from "./plugin/storage";
 import { AccountManager, type ModelFamily, parseRateLimitReason, calculateBackoffMs, computeSoftQuotaCacheTtlMs } from "./plugin/accounts";
 import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
 import { loadConfig, initRuntimeConfig, type AntigravityConfig } from "./plugin/config";
-import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
+import { createSessionRecoveryHook, getRecoverySuccessToast, detectErrorType, getRecoveryToastContent } from "./plugin/recovery";
 import { checkAccountsQuota } from "./plugin/quota";
 import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
@@ -1904,14 +1904,18 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 }
 
                 // Handle recoverable thinking errors - retry with forced recovery
-                if (error instanceof Error && error.message === "THINKING_RECOVERY_NEEDED") {
-                  // Only retry once with forced recovery to avoid infinite loops
-                  if (!forceThinkingRecovery) {
-                    pushDebug("thinking-recovery: API error detected, retrying with forced recovery");
-                    forceThinkingRecovery = true;
-                    i = -1; // Will become 0 after loop increment, restart endpoint loop
-                    continue;
-                  }
+      if (error instanceof Error && error.message === "THINKING_RECOVERY_NEEDED") {
+        // This is a thinking block order error - show recovery toast
+        const errorType = detectErrorType(error.message);
+        
+        // Only show recovery toast if it's actually a recoverable thinking error
+        // If errorType is null, this is not a thinking block error - don't show misleading toast
+        if (errorType) {
+          const toast = getRecoveryToastContent(errorType);
+          if (toast) {
+            showToast(`${toast.title}: ${toast.message}`, "warning");
+          }
+        }
                   
                   // Already tried with forced recovery, give up and return error
                   const recoveryError = error as any;
