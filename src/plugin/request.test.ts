@@ -23,8 +23,6 @@ const {
   hasToolUseInMessages,
   hasSignedThinkingInMessages,
   generateSyntheticProjectId,
-  formatToolDebugSummary,
-  collectContentStats,
   MIN_SIGNATURE_LENGTH,
   transformStreamingPayload,
   createStreamingTransformer,
@@ -365,76 +363,6 @@ describe("request.ts", () => {
         { role: "assistant", content: [{ type: "thinking", thinking: "no sig" }] },
       ];
       expect(hasSignedThinkingInMessages(messages)).toBe(false);
-    });
-  });
-
-  describe("formatToolDebugSummary", () => {
-    it("returns only entries with hasSchema=n", () => {
-      const summaries = [
-        "decl=alpha,src=functionDeclarations,hasSchema=y",
-        "decl=beta,src=functionDeclarations,hasSchema=n",
-        "decl=gamma,src=functionDeclarations,hasSchema=n",
-      ];
-      expect(formatToolDebugSummary(summaries)).toBe(
-        "decl=beta,src=functionDeclarations,hasSchema=n | decl=gamma,src=functionDeclarations,hasSchema=n",
-      );
-    });
-
-    it("returns fallback when all tools are ok", () => {
-      const summaries = [
-        "decl=alpha,src=functionDeclarations,hasSchema=y",
-        "decl=beta,src=functionDeclarations,hasSchema=y",
-      ];
-      expect(formatToolDebugSummary(summaries)).toBe("All tools OK");
-    });
-  });
-
-  describe("collectContentStats", () => {
-    it("counts parts in Gemini contents", () => {
-      const stats = collectContentStats({
-        contents: [
-          { role: "user", parts: [{ text: "hello" }] },
-          { role: "model", parts: [{ functionCall: { name: "doThing" } }] },
-          { role: "model", parts: [{ functionResponse: { name: "doThing", response: {} } }] },
-          { role: "model", parts: [{ thought: true, text: "thinking" }] },
-          { role: "user", parts: [] },
-        ],
-      });
-
-      expect(stats).toEqual({
-        totalMessages: 5,
-        textParts: 1,
-        toolUseParts: 1,
-        toolResultParts: 1,
-        thinkingParts: 1,
-        emptyContentMessages: 1,
-      });
-    });
-
-    it("counts parts in Claude messages", () => {
-      const stats = collectContentStats({
-        messages: [
-          { role: "user", content: [{ type: "text", text: "hello" }] },
-          {
-            role: "assistant",
-            content: [
-              { type: "tool_use", id: "tool-1", name: "lookup" },
-              { type: "tool_result", tool_use_id: "tool-1", content: "ok" },
-              { type: "thinking", thinking: "hmm", signature: "sig" },
-            ],
-          },
-          { role: "assistant", content: [] },
-        ],
-      });
-
-      expect(stats).toEqual({
-        totalMessages: 3,
-        textParts: 1,
-        toolUseParts: 1,
-        toolResultParts: 1,
-        thinkingParts: 1,
-        emptyContentMessages: 1,
-      });
     });
   });
 

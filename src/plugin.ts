@@ -1051,7 +1051,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
             toolDebugMissing?: number;
             toolDebugSummary?: string;
             toolDebugPayload?: string;
-            contentStats?: ReturnType<typeof prepareAntigravityRequest>["contentStats"];
           };
 
           let lastFailure: FailureContext | null = null;
@@ -1396,11 +1395,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   warmupUrl,
                   prepared.effectiveModel,
                   prepared.sessionId,
-                  undefined,
-                  undefined,
-                  undefined,
-                  undefined,
-                  prepared.contentStats,
                 );
                 await transformed.text();
                 markWarmupSuccess(prepared.sessionId);
@@ -1779,7 +1773,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       toolDebugMissing: prepared.toolDebugMissing,
                       toolDebugSummary: prepared.toolDebugSummary,
                       toolDebugPayload: prepared.toolDebugPayload,
-                      contentStats: prepared.contentStats,
                     };
                     shouldSwitchAccount = true;
                     break;
@@ -1801,7 +1794,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       toolDebugMissing: prepared.toolDebugMissing,
                       toolDebugSummary: prepared.toolDebugSummary,
                       toolDebugPayload: prepared.toolDebugPayload,
-                      contentStats: prepared.contentStats,
                     };
                     
                     await sleep(expBackoffMs, abortSignal);
@@ -1838,7 +1830,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     toolDebugMissing: prepared.toolDebugMissing,
                     toolDebugSummary: prepared.toolDebugSummary,
                     toolDebugPayload: prepared.toolDebugPayload,
-                    contentStats: prepared.contentStats,
                   };
                   continue;
                 }
@@ -1933,7 +1924,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   prepared.toolDebugSummary,
                   prepared.toolDebugPayload,
                   debugLines,
-                  prepared.contentStats,
                 );
 
                 // Check for context errors and show appropriate toast
@@ -2028,7 +2018,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     lastFailure.toolDebugSummary,
                     lastFailure.toolDebugPayload,
                     debugLines,
-                    lastFailure.contentStats,
                   );
                 }
 
@@ -2053,7 +2042,6 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 lastFailure.toolDebugSummary,
                 lastFailure.toolDebugPayload,
                 debugLines,
-                lastFailure.contentStats,
               );
             }
 

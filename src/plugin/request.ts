@@ -351,148 +351,6 @@ function isGeminiThinkingPart(part: any): boolean {
   );
 }
 
-type ContentStats = {
-  totalMessages: number;
-  textParts: number;
-  toolUseParts: number;
-  toolResultParts: number;
-  thinkingParts: number;
-  emptyContentMessages: number;
-};
-
-function createContentStats(): ContentStats {
-  return {
-    totalMessages: 0,
-    textParts: 0,
-    toolUseParts: 0,
-    toolResultParts: 0,
-    thinkingParts: 0,
-    emptyContentMessages: 0,
-  };
-}
-
-function isTextPart(part: any): boolean {
-  if (!part || typeof part !== "object") {
-    return false;
-  }
-  if (typeof part.text === "string") {
-    return part.text.trim().length > 0;
-  }
-  if (part.text && typeof part.text === "object" && typeof part.text.text === "string") {
-    return part.text.text.trim().length > 0;
-  }
-  return false;
-}
-
-function addContentStatsFromParts(stats: ContentStats, parts: any[]): void {
-  for (const part of parts) {
-    if (typeof part === "string") {
-      if (part.trim().length > 0) {
-        stats.textParts += 1;
-      }
-      continue;
-    }
-    if (!part || typeof part !== "object") {
-      continue;
-    }
-
-    const isClaudeToolUse = part.type === "tool_use";
-    const isClaudeToolResult = part.type === "tool_result";
-    const isClaudeThinking = part.type === "thinking" || part.type === "redacted_thinking";
-    const isGeminiToolUse = isGeminiToolUsePart(part);
-    const isGeminiToolResult = !!(part.functionResponse || part.tool_result || part.toolResult);
-    const isGeminiThinking = isGeminiThinkingPart(part);
-
-    const isToolUse = isClaudeToolUse || isGeminiToolUse;
-    const isToolResult = isClaudeToolResult || isGeminiToolResult;
-    const isThinking = isClaudeThinking || isGeminiThinking;
-
-    if (isToolUse) {
-      stats.toolUseParts += 1;
-    }
-    if (isToolResult) {
-      stats.toolResultParts += 1;
-    }
-    if (isThinking) {
-      stats.thinkingParts += 1;
-    }
-    if (!isToolUse && !isToolResult && !isThinking && isTextPart(part)) {
-      stats.textParts += 1;
-    }
-  }
-}
-
-function addContentStatsFromMessage(stats: ContentStats, content: unknown): void {
-  stats.totalMessages += 1;
-
-  if (typeof content === "string") {
-    if (content.trim().length > 0) {
-      stats.textParts += 1;
-    } else {
-      stats.emptyContentMessages += 1;
-    }
-    return;
-  }
-
-  if (!Array.isArray(content) || content.length === 0) {
-    stats.emptyContentMessages += 1;
-    return;
-  }
-
-  addContentStatsFromParts(stats, content);
-}
-
-function accumulateContentStats(stats: ContentStats, payload: Record<string, unknown>): void {
-  const anyPayload = payload as any;
-
-  if (Array.isArray(anyPayload.contents)) {
-    for (const content of anyPayload.contents) {
-      if (!content || typeof content !== "object") {
-        stats.totalMessages += 1;
-        stats.emptyContentMessages += 1;
-        continue;
-      }
-      const parts = Array.isArray((content as any).parts)
-        ? (content as any).parts
-        : Array.isArray((content as any).content)
-          ? (content as any).content
-          : undefined;
-      if (parts) {
-        addContentStatsFromMessage(stats, parts);
-      } else if (typeof (content as any).content === "string") {
-        addContentStatsFromMessage(stats, (content as any).content);
-      } else {
-        stats.totalMessages += 1;
-        stats.emptyContentMessages += 1;
-      }
-    }
-  }
-
-  if (Array.isArray(anyPayload.messages)) {
-    for (const message of anyPayload.messages) {
-      if (!message || typeof message !== "object") {
-        stats.totalMessages += 1;
-        stats.emptyContentMessages += 1;
-        continue;
-      }
-      addContentStatsFromMessage(stats, (message as any).content);
-    }
-  }
-}
-
-function collectContentStats(payload: Record<string, unknown>): ContentStats {
-  const stats = createContentStats();
-  accumulateContentStats(stats, payload);
-  return stats;
-}
-
-function formatToolDebugSummary(toolDebugSummaries: string[]): string {
-  return toolDebugSummaries
-    .filter((summary) => summary.includes("hasSchema=n"))
-    .slice(0, 10)
-    .join(" | ") || "All tools OK";
-}
-
 // Sentinel value used when signature recovery fails - allows Claude to handle gracefully
 // by redacting the thinking block instead of rejecting the request entirely.
 // Reference: LLM-API-Key-Proxy uses this pattern for Gemini 3 tool calls.
@@ -774,7 +632,6 @@ export function prepareAntigravityRequest(
   toolDebugMissing?: number;
   toolDebugSummary?: string;
   toolDebugPayload?: string;
-  contentStats?: ContentStats;
   needsSignedThinkingWarmup?: boolean;
   headerStyle: HeaderStyle;
   thinkingRecoveryMessage?: string;
@@ -788,7 +645,6 @@ export function prepareAntigravityRequest(
   let sessionId: string | undefined;
   let needsSignedThinkingWarmup = false;
   let thinkingRecoveryMessage: string | undefined;
-  const contentStats = createContentStats();
 
   if (!isGenerativeLanguageRequest(input)) {
     return {
@@ -895,8 +751,6 @@ export function prepareAntigravityRequest(
             // Step 3: Apply tool pairing fixes (ID assignment, response matching, orphan recovery)
             applyToolPairingFixes(req as Record<string, unknown>, true);
           }
-
-          accumulateContentStats(contentStats, req as Record<string, unknown>);
         }
 
         if (isClaudeThinking && sessionId) {
@@ -1461,8 +1315,6 @@ export function prepareAntigravityRequest(
 
         stripInjectedDebugFromRequestPayload(requestPayload);
 
-        accumulateContentStats(contentStats, requestPayload);
-
         const effectiveProjectId = projectId?.trim() || generateSyntheticProjectId();
         resolvedProjectId = effectiveProjectId;
 
@@ -1588,9 +1440,8 @@ export function prepareAntigravityRequest(
     endpoint: transformedUrl,
     sessionId,
     toolDebugMissing,
-    toolDebugSummary: formatToolDebugSummary(toolDebugSummaries),
+    toolDebugSummary: toolDebugSummaries.slice(0, 20).join(" | "),
     toolDebugPayload,
-    contentStats,
     needsSignedThinkingWarmup,
     headerStyle,
     thinkingRecoveryMessage,
@@ -1661,7 +1512,6 @@ export async function transformAntigravityResponse(
   toolDebugSummary?: string,
   toolDebugPayload?: string,
   debugLines?: string[],
-  contentStats?: ContentStats,
 ): Promise<Response> {
   const contentType = response.headers.get("content-type") ?? "";
   const isJsonResponse = contentType.includes("application/json");
@@ -1733,7 +1583,7 @@ export async function transformAntigravityResponse(
 
       // Inject Debug Info
       if (errorBody?.error) {
-        const debugInfo = `\n\n[Debug Info]\nRequested Model: ${requestedModel || "Unknown"}\nEffective Model: ${effectiveModel || "Unknown"}\nProject: ${projectId || "Unknown"}\nEndpoint: ${endpoint || "Unknown"}\nStatus: ${response.status}\nRequest ID: ${headers.get("x-request-id") || "N/A"}${toolDebugMissing !== undefined ? `\nTool Debug Missing: ${toolDebugMissing}` : ""}${toolDebugSummary ? `\nTool Debug Summary: ${toolDebugSummary}` : ""}${toolDebugPayload ? `\nTool Debug Payload: ${toolDebugPayload}` : ""}${contentStats ? `\nContent Stats: ${contentStats.totalMessages} msgs, ${contentStats.textParts} text, ${contentStats.toolUseParts} tool_use, ${contentStats.thinkingParts} thinking, ${contentStats.emptyContentMessages} empty` : ""}`;
+        const debugInfo = `\n\n[Debug Info]\nRequested Model: ${requestedModel || "Unknown"}\nEffective Model: ${effectiveModel || "Unknown"}\nProject: ${projectId || "Unknown"}\nEndpoint: ${endpoint || "Unknown"}\nStatus: ${response.status}\nRequest ID: ${headers.get("x-request-id") || "N/A"}${toolDebugMissing !== undefined ? `\nTool Debug Missing: ${toolDebugMissing}` : ""}${toolDebugSummary ? `\nTool Debug Summary: ${toolDebugSummary}` : ""}${toolDebugPayload ? `\nTool Debug Payload: ${toolDebugPayload}` : ""}`;
         const injectedDebug = debugText ? `\n\n${debugText}` : "";
 
         // Check if this is a recoverable thinking error - throw to trigger retry
@@ -1906,10 +1756,9 @@ export const __testExports = {
   ensureThinkingBeforeToolUseInContents,
   ensureThinkingBeforeToolUseInMessages,
   generateSyntheticProjectId,
-  formatToolDebugSummary,
-  collectContentStats,
   MIN_SIGNATURE_LENGTH,
   transformSseLine,
   transformStreamingPayload,
   createStreamingTransformer,
 };
+

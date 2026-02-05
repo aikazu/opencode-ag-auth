@@ -916,7 +916,7 @@ function stripThinkingXmlFromText(text: string): string {
  * sometimes outputs thinking as plain XML which the Antigravity API rejects.
  */
 function stripAllThinkingBlocks(contentArray: any[]): any[] {
-  const result = contentArray
+  return contentArray
     .filter(item => {
       if (!item || typeof item !== "object") return true;
       if (isToolBlock(item)) return true;
@@ -939,12 +939,6 @@ function stripAllThinkingBlocks(contentArray: any[]): any[] {
       return item;
     })
     .filter(item => item !== null);
-
-  if (result.length === 0 && contentArray.length > 0) {
-    return [{ text: "" }];
-  }
-
-  return result;
 }
 
 /**
@@ -2864,3 +2858,4 @@ data: ${JSON.stringify({ type: "message_stop" })}
     },
   });
 }
+

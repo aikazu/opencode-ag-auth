@@ -401,22 +401,6 @@ describe("filterUnsignedThinkingBlocks", () => {
     expect(result[0].parts[0].text).toBe("Visible content remains");
   });
 
-  it("injects a placeholder when Claude thinking stripping leaves no content", () => {
-    const contents = [
-      {
-        role: "model",
-        parts: [
-          { type: "thinking", thinking: "internal" },
-          { text: "<thinking>Only thinking</thinking>" },
-        ],
-      },
-    ];
-
-    const result = filterUnsignedThinkingBlocks(contents, undefined, undefined, true /* isClaudeModel */);
-
-    expect(result[0].parts).toEqual([{ text: "" }]);
-  });
-
   it("handles multiline <thinking> blocks with various content", () => {
     const contents = [
       {
