@@ -2617,7 +2617,73 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   continue;
                 }
 
-                if (menuResult.mode === "verify") {
+                if (menuResult.mode === "verify" || menuResult.mode === "verify-all") {
+                  const verifyAll = menuResult.mode === "verify-all" || menuResult.verifyAll === true;
+
+                  if (verifyAll) {
+                    if (existingStorage.accounts.length === 0) {
+                      console.log("\nNo accounts available to verify.\n");
+                      continue;
+                    }
+
+                    console.log(`\nChecking verification status for ${existingStorage.accounts.length} account(s)...\n`);
+
+                    let okCount = 0;
+                    let blockedCount = 0;
+                    let errorCount = 0;
+
+                    const blockedResults: Array<{ label: string; message: string; verifyUrl?: string }> = [];
+
+                    for (let i = 0; i < existingStorage.accounts.length; i++) {
+                      const account = existingStorage.accounts[i];
+                      if (!account) continue;
+
+                      const label = account.email || `Account ${i + 1}`;
+                      process.stdout.write(`- [${i + 1}/${existingStorage.accounts.length}] ${label} ... `);
+
+                      const verification = await verifyAccountAccess(account, client, providerId);
+                      if (verification.status === "ok") {
+                        okCount += 1;
+                        console.log("ok");
+                        continue;
+                      }
+
+                      if (verification.status === "blocked") {
+                        blockedCount += 1;
+                        console.log("needs verification");
+                        blockedResults.push({
+                          label,
+                          message: verification.message,
+                          verifyUrl: verification.verifyUrl,
+                        });
+                        continue;
+                      }
+
+                      errorCount += 1;
+                      console.log(`error (${verification.message})`);
+                    }
+
+                    console.log(`\nVerification summary: ${okCount} ready, ${blockedCount} need verification, ${errorCount} errors.`);
+
+                    if (blockedResults.length > 0) {
+                      console.log("\nAccounts needing verification:");
+                      for (const result of blockedResults) {
+                        console.log(`\n- ${result.label}`);
+                        console.log(`  ${result.message}`);
+                        if (result.verifyUrl) {
+                          console.log(`  URL: ${result.verifyUrl}`);
+                        } else {
+                          console.log("  URL: not provided by API response");
+                        }
+                      }
+                      console.log("");
+                    } else {
+                      console.log("");
+                    }
+
+                    continue;
+                  }
+
                   let verifyAccountIndex = menuResult.verifyAccountIndex;
                   if (verifyAccountIndex === undefined) {
                     verifyAccountIndex = await promptAccountIndexForVerification(existingAccounts);

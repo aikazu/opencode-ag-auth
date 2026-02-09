@@ -30,7 +30,7 @@ export async function promptAddAnotherAccount(currentCount: number): Promise<boo
   }
 }
 
-export type LoginMode = "add" | "fresh" | "manage" | "check" | "verify" | "cancel";
+export type LoginMode = "add" | "fresh" | "manage" | "check" | "verify" | "verify-all" | "cancel";
 
 export interface ExistingAccountInfo {
   email?: string;
@@ -48,6 +48,7 @@ export interface LoginMenuResult {
   refreshAccountIndex?: number;
   toggleAccountIndex?: number;
   verifyAccountIndex?: number;
+  verifyAll?: boolean;
   deleteAll?: boolean;
 }
 
@@ -62,7 +63,7 @@ async function promptLoginModeFallback(existingAccounts: ExistingAccountInfo[]):
     console.log("");
 
     while (true) {
-      const answer = await rl.question("(a)dd new, (f)resh start, (c)heck quotas, (v)erify account? [a/f/c/v]: ");
+      const answer = await rl.question("(a)dd new, (f)resh start, (c)heck quotas, (v)erify account, (va) verify all? [a/f/c/v/va]: ");
       const normalized = answer.trim().toLowerCase();
 
       if (normalized === "a" || normalized === "add") {
@@ -77,8 +78,11 @@ async function promptLoginModeFallback(existingAccounts: ExistingAccountInfo[]):
       if (normalized === "v" || normalized === "verify") {
         return { mode: "verify" };
       }
+      if (normalized === "va" || normalized === "verify-all" || normalized === "all") {
+        return { mode: "verify-all", verifyAll: true };
+      }
 
-      console.log("Please enter 'a', 'f', 'c', or 'v'.");
+      console.log("Please enter 'a', 'f', 'c', 'v', or 'va'.");
     }
   } finally {
     rl.close();
@@ -114,6 +118,9 @@ export async function promptLoginMode(existingAccounts: ExistingAccountInfo[]): 
 
       case "verify":
         return { mode: "verify" };
+
+      case "verify-all":
+        return { mode: "verify-all", verifyAll: true };
 
       case "select-account": {
         const accountAction = await showAccountDetails(action.account);
