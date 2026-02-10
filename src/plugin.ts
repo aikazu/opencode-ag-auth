@@ -571,11 +571,12 @@ async function promptAccountIndexForVerification(
         continue;
       }
       const normalizedIndex = parsedIndex - 1;
-      if (normalizedIndex < 0 || normalizedIndex >= accounts.length) {
+      const selected = accounts.find((account) => account.index === normalizedIndex);
+      if (!selected) {
         console.log("Please enter a number from the list above.");
         continue;
       }
-      return normalizedIndex;
+      return selected.index;
     }
   } finally {
     rl.close();
@@ -601,15 +602,15 @@ function markStoredAccountVerificationRequired(
   verifyUrl?: string,
 ): boolean {
   let changed = false;
+  const wasVerificationRequired = account.verificationRequired === true;
 
-  if (account.verificationRequired !== true) {
+  if (!wasVerificationRequired) {
     account.verificationRequired = true;
     changed = true;
   }
 
-  const timestamp = Date.now();
-  if (account.verificationRequiredAt !== timestamp) {
-    account.verificationRequiredAt = timestamp;
+  if (!wasVerificationRequired || account.verificationRequiredAt === undefined) {
+    account.verificationRequiredAt = Date.now();
     changed = true;
   }
 
