@@ -669,18 +669,31 @@ See the full [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for solutions to c
 
 ---
 
-## Support
-
-If this plugin helps you, consider supporting its maintenance:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/S6S81QBOIR)
-
+## Support & Community
+ 
+If this plugin helps your workflow, consider supporting its development:
+ 
+### 🇮🇩 Indonesia / ASEAN (QRIS)
+ 
+- **[Saweria](https://saweria.co/andyvandaric)** (Recommended for one-off support)
+- **[Trakteer](https://trakteer.id/andyvandaric)** (For recurring support / exclusive content)
+ 
+### 🌍 International
+ 
+- **[Ko-fi](https://ko-fi.com/andyvandaric)** (PayPal / Card)
+- **[GitHub Sponsors](https://github.com/sponsors/andyvandaric)**
+ 
 ---
-
+ 
 ## Credits
 
-- [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth) by [@jenslys](https://github.com/jenslys)
-- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
+This project is built upon the work of incredible developers:
+
+- **[jenslys](https://github.com/jenslys)** - Original creator of [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth).
+- **[NoeFabris](https://github.com/NoeFabris)** - Added Antigravity support in [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth).
+- **[Andy Vandaric](https://github.com/andyvandaric)** - Current maintainer (Oh-My-OpenCode integration, Proxy support, Strict Quota).
+
+Special thanks to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
 
 ## License
 
