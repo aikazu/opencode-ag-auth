@@ -1,22 +1,35 @@
-# Antigravity + Gemini CLI OAuth Plugin for Opencode
+# OpenCode AG Auth (Antigravity Guard)
 
-[![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
-[![npm beta](https://img.shields.io/npm/v/opencode-antigravity-auth/beta.svg?label=beta)](https://www.npmjs.com/package/opencode-antigravity-auth)
-[![npm downloads](https://img.shields.io/npm/dw/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
+[![npm version](https://img.shields.io/npm/v/opencode-ag-auth.svg)](https://www.npmjs.com/package/opencode-ag-auth)
+[![npm beta](https://img.shields.io/npm/v/opencode-ag-auth/beta.svg?label=beta)](https://www.npmjs.com/package/opencode-ag-auth)
+[![npm downloads](https://img.shields.io/npm/dw/opencode-ag-auth.svg)](https://www.npmjs.com/package/opencode-ag-auth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![X (Twitter)](https://img.shields.io/badge/X-@dopesalmon-000000?style=flat&logo=x)](https://x.com/dopesalmon)
 
-Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth so you can use Antigravity rate limits and access models like `gemini-3-pro` and `claude-opus-4-5-thinking` with your Google credentials.
+**The Hardened, Safety-First Antigravity Plugin for OpenCode.**
 
-## What You Get
+Enable OpenCode to authenticate against **Antigravity** (Google's IDE) with enterprise-grade **account protection** and **session stability**. Access models like `gemini-3-pro` and `claude-opus-4-6-thinking` while keeping your accounts safe from bans and your agents running without interruption.
 
-- **Claude Opus 4.5, Sonnet 4.5** and **Gemini 3 Pro/Flash** via Google OAuth
-- **Multi-account support** — add multiple Google accounts, auto-rotates when rate-limited
-- **Dual quota system** — access both Antigravity and Gemini CLI quotas from one plugin
-- **Thinking models** — extended thinking for Claude and Gemini 3 with configurable budgets
-- **Google Search grounding** — enable web search for Gemini models (auto or always-on)
-- **Auto-recovery** — handles session errors and tool failures automatically
-- **Plugin compatible** — works alongside other OpenCode plugins (oh-my-opencode, dcp, etc.)
+## Why this Fork?
+
+This is a specialized fork of `opencode-antigravity-auth` focused on **Safety** and **Reliability** for power users and autonomous agents.
+
+### 🛡️ Enhanced Protection
+- **Strict Quota Protocol (SQP)**: Enforces a **70% safety buffer** on API usage. Accounts are strictly locked *before* they hit Google's abuse limits.
+- **Leak-Proof Locking**: Locked accounts are ignored until their specific reset time passes, preventing "leaky" usage from cache expiry.
+
+### ⚡ Agent Stability
+- **Oh-My-OpenCode Integration**: Native support for session recovery. Automatically handles tool crashes and model "thinking" blocks without user intervention.
+- **Smart Proxy Support**: Enterprise-ready `undici` proxy support for complex network environments.
+- **Interactive Pause**: Gracefully pauses execution when quotas run low, allowing human intervention instead of crashing.
+
+## Key Features
+
+- **All Antigravity Models**: Claude Opus 4.6, Sonnet 4.5, and Gemini 3 Pro/Flash via Google OAuth.
+- **Thinking Models**: Configurable thinking budgets for complex reasoning tasks.
+- **Multi-Account Rotation**: Add unlimited Google accounts; the plugin auto-rotates based on health and quota.
+- **Dual Quota Pools**: Intelligently routes between Antigravity and Gemini CLI quotas.
+- **Google Search Grounding**: Enable real-time web search for Gemini models.
 
 ---
 
@@ -51,7 +64,7 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
 
 ```
-Install the opencode-antigravity-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/dev/README.md
+Install the opencode-ag-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/andyvandaric/opencode-ag-auth/main/README.md
 ```
 
 **Option B: Manual setup**
@@ -60,11 +73,11 @@ Install the opencode-antigravity-auth plugin and add the Antigravity model defin
 
    ```json
    {
-     "plugin": ["opencode-antigravity-auth@latest"]
+     "plugin": ["opencode-ag-auth@latest"]
    }
    ```
 
-   > Want bleeding-edge features? Use `opencode-antigravity-auth@beta` instead.
+   > Want bleeding-edge features? Use `opencode-ag-auth@beta` instead.
 
 2. **Login** with your Google account:
 
@@ -155,7 +168,7 @@ Add this to your `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["opencode-antigravity-auth@latest"],
+  "plugin": ["opencode-ag-auth@latest"],
   "provider": {
     "google": {
       "models": {
@@ -353,7 +366,7 @@ Invalid JSON payload received. Unknown name "parameters" at 'request.tools[0]'
 **Solutions:**
 1. **Update to latest beta:**
    ```json
-   { "plugin": ["opencode-antigravity-auth@beta"] }
+   { "plugin": ["opencode-ag-auth@beta"] }
    ```
 
 2. **Disable MCP servers** one-by-one to find the problematic one
@@ -384,7 +397,7 @@ This usually means an MCP tool name starts with a number (for example, a 1mcp ke
 **Diagnosis:**
 1. Disable all MCP servers in your config
 2. Enable one-by-one until error reappears
-3. Report the specific MCP in a [GitHub issue](https://github.com/NoeFabris/opencode-antigravity-auth/issues)
+3. Report the specific MCP in a [GitHub issue](https://github.com/andyvandaric/opencode-ag-auth/issues)
 
 ---
 
@@ -524,7 +537,7 @@ The correct key is `plugin` (singular):
 ### Migrating Accounts Between Machines
 
 When copying `antigravity-accounts.json` to a new machine:
-1. Ensure the plugin is installed: `"plugin": ["opencode-antigravity-auth@beta"]`
+1. Ensure the plugin is installed: `"plugin": ["opencode-ag-auth@beta"]`
 2. Copy `~/.config/opencode/antigravity-accounts.json`
 3. If you get "API key missing" error, the refresh token may be invalid — re-authenticate
 
@@ -542,7 +555,7 @@ DCP creates synthetic assistant messages that lack thinking blocks. **List this 
 ```json
 {
   "plugin": [
-    "opencode-antigravity-auth@latest",
+    "opencode-ag-auth@latest",
     "@tarquinen/opencode-dcp@latest"
   ]
 }
@@ -577,7 +590,7 @@ Create `~/.config/opencode/antigravity.json` for optional settings:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json"
+  "$schema": "https://raw.githubusercontent.com/andyvandaric/opencode-ag-auth/main/assets/antigravity.schema.json"
 }
 ```
 
@@ -689,9 +702,20 @@ If this plugin helps your workflow, consider supporting its development:
 
 This project is built upon the work of incredible developers:
 
-- **[jenslys](https://github.com/jenslys)** - Original creator of [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth).
-- **[NoeFabris](https://github.com/NoeFabris)** - Added Antigravity support in [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth).
-- **[Andy Vandaric](https://github.com/andyvandaric)** - Current maintainer (Oh-My-OpenCode integration, Proxy support, Strict Quota).
+- **[jenslys](https://github.com/jenslys)** - Original creator of [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth) (Basis for Gemini CLI auth).
+- **[NoeFabris](https://github.com/NoeFabris)** - Added Antigravity support in [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth) (Multi-account support).
+- **[Andy Vandaric](https://github.com/andyvandaric)** - **Enhanced Protection & Stability**:
+  - **Strict Quota Protocol**: Custom safety algorithm with **70% usage threshold** (30% safety buffer). Accounts are strictly locked until their specific reset time passes, preventing "leaky" usage from cache expiry.
+  - **Oh-My-OpenCode Integration**: Full session recovery for tool crashes and thinking block errors.
+  - **Enterprise Feat**: Proxy support via `undici`.
+  - **UX/Fixes**: Interactive quota pause and Cloud Code API header fixes.
+
+### Community Contributors
+- **[aaronsewall](https://github.com/aaronsewall)** - Added HTTP/HTTPS proxy support (#301).
+- **[sunbos](https://github.com/sunbos)** - Logic for Oh-My-OpenCode integration (#349).
+- **[m2m6vrm5fp-source](https://github.com/m2m6vrm5fp-source)** - Fixed Gemini 400 errors for empty properties (#319).
+- **[jcromero](https://github.com/jcromero)** - Added interactive pause feature (#443).
+- **[mynameistito](https://github.com/mynameistito)** - Cleaned up deprecated models (#437).
 
 Special thanks to [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI).
 
