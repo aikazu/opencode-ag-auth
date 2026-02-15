@@ -37,6 +37,9 @@ antigravity-debug-*.log
 # Hive workflow internal files
 .hive/
 
+# FlowCrate local database
+.flowcrate/flowcrate.db
+
 # Test artifacts
 test-file.ts
 
