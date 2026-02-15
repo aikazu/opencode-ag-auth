@@ -3461,15 +3461,84 @@ export const createAntigravityPlugin =
                           if (acc) {
                             acc.cachedQuota = res.quota.groups;
                             acc.cachedQuotaUpdatedAt = Date.now();
+
+                            // Derive rateLimitResetTimes from actual quota data
+                            // so auth menu badges accurately reflect quota state
+                            if (!acc.rateLimitResetTimes) {
+                              acc.rateLimitResetTimes = {};
+                            }
+
+                            // Claude quota → rateLimitResetTimes.claude
+                            const claudeQuota = res.quota.groups.claude;
+                            if (claudeQuota) {
+                              if (
+                                typeof claudeQuota.remainingFraction ===
+                                  "number" &&
+                                claudeQuota.remainingFraction <= 0 &&
+                                claudeQuota.resetTime
+                              ) {
+                                acc.rateLimitResetTimes.claude = Date.parse(
+                                  claudeQuota.resetTime,
+                                );
+                              } else {
+                                // Quota available → clear any stale rate limit
+                                delete acc.rateLimitResetTimes.claude;
+                              }
+                            }
+
+                            // Gemini Pro/Flash → rateLimitResetTimes["gemini-antigravity"]
+                            const geminiPro = res.quota.groups["gemini-pro"];
+                            const geminiFlash =
+                              res.quota.groups["gemini-flash"];
+                            const geminiExhausted =
+                              geminiPro &&
+                              typeof geminiPro.remainingFraction === "number" &&
+                              geminiPro.remainingFraction <= 0;
+                            const flashExhausted =
+                              geminiFlash &&
+                              typeof geminiFlash.remainingFraction ===
+                                "number" &&
+                              geminiFlash.remainingFraction <= 0;
+
+                            if (geminiExhausted && flashExhausted) {
+                              // Both Gemini families exhausted — use earliest reset
+                              const proReset = geminiPro?.resetTime
+                                ? Date.parse(geminiPro.resetTime)
+                                : Infinity;
+                              const flashReset = geminiFlash?.resetTime
+                                ? Date.parse(geminiFlash.resetTime)
+                                : Infinity;
+                              acc.rateLimitResetTimes["gemini-antigravity"] =
+                                Math.min(proReset, flashReset);
+                            } else {
+                              // At least one Gemini family has quota → clear
+                              delete acc.rateLimitResetTimes[
+                                "gemini-antigravity"
+                              ];
+                            }
+
+                            // Clean up empty object
+                            if (
+                              Object.keys(acc.rateLimitResetTimes).length === 0
+                            ) {
+                              delete acc.rateLimitResetTimes;
+                            }
+
                             storageUpdated = true;
                           }
                         }
 
                         if (res.updatedAccount) {
+                          const currentAcc =
+                            existingStorage.accounts[res.index];
                           existingStorage.accounts[res.index] = {
                             ...res.updatedAccount,
                             cachedQuota: res.quota?.groups,
                             cachedQuotaUpdatedAt: Date.now(),
+                            // Preserve rate limit state derived from quota check above
+                            rateLimitResetTimes:
+                              currentAcc?.rateLimitResetTimes ??
+                              res.updatedAccount.rateLimitResetTimes,
                           };
                           storageUpdated = true;
                         }

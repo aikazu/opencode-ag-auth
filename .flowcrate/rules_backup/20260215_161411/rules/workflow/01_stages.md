@@ -102,25 +102,6 @@ flowcrate checklist add <id> "Expected output/deliverable" --json | Out-String
 >
 > **Consequence of violation:** Time not tracked = metrics corrupted = user cannot see actual effort.
 
-> [!CAUTION]
-> **MANDATORY: Auto-Complete After Work Finishes**
-> When implementation AND verification (build/tests) succeed, AI MUST **immediately** move the card out of Doing:
->
-> | Scenario | Action |
-> |----------|--------|
-> | Build/tests pass, no manual verification needed | Move directly to **Done** (complete Done checklist) |
-> | Build/tests pass, but needs manual testing (UI, complex interactions) | Move to **Testing** |
-> | Build/tests fail | Stay in **Doing**, fix the issue |
->
-> **NEVER leave a card in Doing after work is complete.**
-> Cards left in Doing = timer keeps running = corrupted metrics = user confusion.
->
-> ```bash
-> # After successful implementation:
-> flowcrate move <id> done --json | Out-String   # or 'testing' if manual verification needed
-> flowcrate commit <id> --json | Out-String       # attach the commit
-> ```
-
 > [!WARNING]
 > **Pre-Flight File Size Check (MANDATORY):**
 > Before editing any file, check line count:

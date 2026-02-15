@@ -78,7 +78,6 @@ flowcrate commit <id> --sha <commit-sha>  # Manual SHA
 > **MANDATORY: Read detailed sections before working!**
 > - ALWAYS check `flowcrate list --status doing` before coding
 > - NEVER skip Doing status (time tracking)
-> - **NEVER leave cards in Doing after work is complete** — auto-move to Done (or Testing if manual verification needed)
 > - Plans require 97%+ confidence before approval
 > - **Plans MUST include confidence score** in frontmatter (e.g., `> **Confidence**: 92%`)
 > - Edge cases MUST be documented in plans
