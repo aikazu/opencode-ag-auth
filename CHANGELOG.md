@@ -2,6 +2,16 @@
 
 
 
+
+## [1.5.5] - 2026-02-15
+
+### Fixed
+
+- **Quota**: wire quota check results to rateLimitResetTimes for accurate auth menu badges (ab276a7)
+
+
+---
+
 ## [1.5.4] - 2026-02-15
 
 ### Added
