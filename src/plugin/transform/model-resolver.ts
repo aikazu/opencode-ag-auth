@@ -40,8 +40,8 @@ export const GEMINI_3_THINKING_LEVELS = ["minimal", "low", "medium", "high"] as 
 export const MODEL_ALIASES: Record<string, string> = {
   // Gemini 3 variants - for Gemini CLI only (tier stripped, thinkingLevel used)
   // For Antigravity, these are bypassed and full model name is kept
-  "gemini-3.1-pro-low": "gemini-3.1-pro",
-  "gemini-3.1-pro-high": "gemini-3.1-pro",
+  "gemini-3.1-pro-low": "gemini-3.1-pro-low",
+  "gemini-3.1-pro-high": "gemini-3.1-pro-high",
   "gemini-3-flash-low": "gemini-3-flash",
   "gemini-3-flash-medium": "gemini-3-flash",
   "gemini-3-flash-high": "gemini-3-flash",
@@ -194,7 +194,7 @@ export function resolveModelWithTier(requestedModel: string, options: ModelResol
   let antigravityModel = modelWithoutQuota;
   if (skipAlias) {
     if (isGemini3Pro && !isImageModel) {
-      antigravityModel = `gemini-3.1-pro`;
+      antigravityModel = `gemini-3.1-pro-${tier || "low"}`;
     } else if (isGemini3Flash && tier) {
       antigravityModel = baseName;
     }
@@ -407,7 +407,8 @@ export function resolveModelWithVariant(
 
     let actualModel = base.actualModel;
     if (isAntigravityGemini3Pro) {
-      actualModel = base.actualModel.replace(/-(low|medium|high)$/, "");
+      const baseModel = base.actualModel.replace(/-(low|medium|high)$/, "");
+      actualModel = `${baseModel}-${level}`;
     }
 
     return {

@@ -765,7 +765,7 @@ describe("request.ts", () => {
           undefined,
           "antigravity"
         );
-        expect(result.effectiveModel).toBe("gemini-3.1-pro");
+        expect(result.effectiveModel).toBe("gemini-3.1-pro-low");
       });
 
       it("transforms gemini-3-flash to gemini-3-flash-preview for gemini-cli headerStyle", () => {
