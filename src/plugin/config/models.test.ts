@@ -23,6 +23,7 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "gemini-2.5-flash",
       "gemini-2.5-pro",
       "gemini-3-flash-preview",
+      "gemini-3.1-pro",
       "gemini-3.1-pro-preview",
     ]);
   });

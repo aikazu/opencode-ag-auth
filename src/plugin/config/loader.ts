@@ -252,3 +252,7 @@ export function initRuntimeConfig(config: AntigravityConfig): void {
 export function getKeepThinking(): boolean {
   return runtimeConfig?.keep_thinking ?? false;
 }
+
+export function isDebugTuiEnabled(): boolean {
+  return runtimeConfig?.debug_tui ?? false;
+}

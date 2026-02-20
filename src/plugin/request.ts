@@ -10,7 +10,7 @@ import {
   type HeaderStyle,
 } from "../constants";
 import { cacheSignature, getCachedSignature } from "./cache";
-import { getKeepThinking } from "./config";
+import { getKeepThinking, isDebugTuiEnabled } from "./config";
 import {
   createStreamingTransformer,
   transformSseLine,
@@ -589,6 +589,39 @@ function generateSyntheticProjectId(): string {
 }
 
 const STREAM_ACTION = "streamGenerateContent";
+
+function sanitizeRequestPayloadForAntigravity(payload: any): void {
+  if (!payload || typeof payload !== "object") return;
+
+  if (Array.isArray(payload.contents)) {
+    for (const content of payload.contents) {
+      if (!content || !Array.isArray(content.parts)) continue;
+
+      let currentThoughtSignature: string | undefined;
+
+      for (const part of content.parts) {
+        if (part && typeof part === "object") {
+          if (part.thought === true && part.thoughtSignature) {
+            currentThoughtSignature = part.thoughtSignature;
+            break;
+          }
+          if ((part.type === "thinking" || part.type === "reasoning") && part.signature) {
+            currentThoughtSignature = part.signature;
+            break;
+          }
+        }
+      }
+
+      if (currentThoughtSignature) {
+        for (const part of content.parts) {
+          if (part && typeof part === "object" && part.functionCall && !part.thoughtSignature) {
+            part.thoughtSignature = currentThoughtSignature;
+          }
+        }
+      }
+    }
+  }
+}
 
 /**
  * Detects requests headed to the Google Generative Language API so we can intercept them.
@@ -1205,6 +1238,8 @@ export function prepareAntigravityRequest(
             const hasCachedThinking = defaultSignatureStore.has(signatureSessionKey);
             needsSignedThinkingWarmup = hasToolUse && !hasSignedThinking && !hasCachedThinking;
           }
+        } else {
+          sanitizeRequestPayloadForAntigravity(requestPayload);
         }
 
         // For Claude models, ensure functionCall/tool use parts carry IDs (required by Anthropic).
@@ -1501,13 +1536,10 @@ export async function transformAntigravityResponse(
   const isEventStreamResponse = contentType.includes("text/event-stream");
 
   // Generate text for thinking injection:
-  // - If debug=true: inject full debug logs
-  // - If keep_thinking=true (but no debug): inject placeholder to trigger signature caching
-  // Both use the same injection path (injectDebugThinking) for consistent behavior
   const debugText =
     isDebugEnabled() && Array.isArray(debugLines) && debugLines.length > 0
       ? formatDebugLinesForThinking(debugLines)
-      : getKeepThinking()
+      : isDebugTuiEnabled() || getKeepThinking()
         ? SYNTHETIC_THINKING_PLACEHOLDER
         : undefined;
   const cacheSignatures = shouldCacheThinkingSignatures(effectiveModel);
