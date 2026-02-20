@@ -772,7 +772,12 @@ export function prepareAntigravityRequest(
           }
         }
 
-        for (const req of requestObjects) {
+        const variantSources: Array<Record<string, unknown>> = [
+          wrappedBody,
+          ...requestObjects,
+        ];
+
+        for (const req of variantSources) {
           const variantConfig = extractVariantThinkingConfig(
             (req.providerOptions as Record<string, unknown> | undefined),
             (req.generationConfig as Record<string, unknown> | undefined),

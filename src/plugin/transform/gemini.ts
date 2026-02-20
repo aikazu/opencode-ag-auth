@@ -275,6 +275,13 @@ export function normalizeGeminiTools(payload: RequestPayload): {
         return t;
       }
 
+      if (Array.isArray(t.functionDeclarations)) {
+        toolDebugSummaries.push(
+          `idx=${toolIndex}, hasFunctionDeclarations=true, passthrough=true`,
+        );
+        return t;
+      }
+
       const newTool = { ...t };
 
       const schemaCandidates = [
@@ -591,13 +598,14 @@ export function wrapToolsAsFunctionDeclarations(
         for (const decl of tool.functionDeclarations as Array<
           Record<string, unknown>
         >) {
-          const schema = (decl.parameters ||
+          const rawSchema = (decl.parameters ||
             decl.parametersJsonSchema ||
             decl.input_schema ||
             decl.inputSchema || {
               type: "OBJECT",
               properties: {},
             }) as Record<string, unknown>;
+          const schema = toGeminiSchema(rawSchema) as Record<string, unknown>;
 
           const rawName = String(decl.name || `tool-${functionDeclarations.length}`);
           functionDeclarations.push({

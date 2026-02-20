@@ -371,6 +371,34 @@ describe("transform/gemini", () => {
       normalizeGeminiTools(payload);
       expect((payload.tools as unknown[])[0]).not.toHaveProperty("custom");
     });
+
+    it("passes through existing functionDeclarations during normalization", () => {
+      const payload: RequestPayload = {
+        contents: [],
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: "question",
+                parametersJsonSchema: {
+                  type: "object",
+                  properties: {
+                    prompt: { type: "string" },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      const result = normalizeGeminiTools(payload);
+
+      expect(result.toolDebugMissing).toBe(0);
+      expect(result.toolDebugSummaries[0]).toContain("hasFunctionDeclarations=true");
+      const tool = (payload.tools as Array<Record<string, unknown>>)[0]!;
+      expect(Array.isArray(tool.functionDeclarations)).toBe(true);
+    });
   });
 
   describe("applyGeminiTransforms", () => {
@@ -1220,6 +1248,40 @@ describe("transform/gemini", () => {
           command: { type: "STRING" },
         },
       });
+    });
+
+    it("normalizes declaration schema from parametersJsonSchema", () => {
+      const payload: RequestPayload = {
+        contents: [],
+        tools: [
+          {
+            functionDeclarations: [
+              {
+                name: "question",
+                parametersJsonSchema: {
+                  type: "object",
+                  properties: {
+                    options: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      wrapToolsAsFunctionDeclarations(payload);
+
+      const tools = payload.tools as Array<Record<string, unknown>>;
+      const decls = tools[0]!.functionDeclarations as Array<Record<string, unknown>>;
+      const params = decls[0]!.parameters as Record<string, unknown>;
+      expect(params.type).toBe("OBJECT");
+      const props = params.properties as Record<string, Record<string, unknown>>;
+      expect(props.options!.type).toBe("ARRAY");
+      expect((props.options!.items as Record<string, unknown>).type).toBe("STRING");
     });
 
     it("handles multiple tools correctly", () => {

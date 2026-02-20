@@ -713,6 +713,31 @@ describe("request.ts", () => {
       expect(result.effectiveModel).toBe("gemini-3.1-pro-high");
     });
 
+    it("uses high tier effective model when wrapped providerOptions is at top level", () => {
+      const wrappedBody = {
+        project: "my-project",
+        providerOptions: {
+          google: {
+            thinkingLevel: "high",
+          },
+        },
+        request: {
+          contents: [{ parts: [{ text: "Hello" }] }],
+        },
+      };
+
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-3.1-pro:generateContent",
+        { method: "POST", body: JSON.stringify(wrappedBody) },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "antigravity"
+      );
+
+      expect(result.effectiveModel).toBe("gemini-3.1-pro-high");
+    });
+
     it("handles unwrapped body format", () => {
       const unwrappedBody = {
         contents: [{ parts: [{ text: "Hello" }] }]
