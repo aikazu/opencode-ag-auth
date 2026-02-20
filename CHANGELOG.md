@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.11] - 2026-02-20
+
+### Fixed
+
+- **Gemini model safety gate** - Added hard allowlist for known working Gemini text models to prevent accidental use of stale/unsupported model IDs.
+- **Legacy model redirects** - Added compatibility redirects for common legacy names (`gemini-pro`, `gemini-flash`, preview/customtools variants) to supported working targets.
+
+### Changed
+
+- **Validation scope** - Gemini allowlist enforcement now applies only to pure Gemini text model paths, so Claude alias compatibility remains intact.
+- **Resolver tests** - Updated model resolver tests to assert unsupported legacy Gemini IDs are rejected with explicit errors.
+
+### Verified
+
+- **Full isolated smoke run** - `typecheck`, `vitest` (28 files / 899 tests), and full `test:e2e:models` all passed.
+- **Model E2E summary** - 17/17 models passed in isolated environment.
+
+---
+
 ## [1.5.10] - 2026-02-20
 
 ### Added
