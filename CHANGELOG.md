@@ -1,3 +1,14 @@
+## [Unreleased]
+
+### Fixed
+
+- **Image model handling** - Disabled image-generation model routing on the Antigravity Cloud Code proxy path and return a clear local error instead of letting requests hit backend `404 Requested entity was not found`.
+
+### Changed
+
+- **Model definitions** - Removed image-generation models from bundled OpenCode model definitions because cloudcode `v1internal:*` endpoints do not support those model IDs for this plugin flow.
+- **Documentation accuracy** - Updated README and troubleshooting guidance to clarify that image generation must use direct Gemini API flows outside this plugin proxy path.
+
 ## [1.6.4] - 2026-02-28
 
 ### Added

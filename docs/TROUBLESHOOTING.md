@@ -171,14 +171,14 @@ Invalid JSON payload received. Unknown name "parameters" at 'request.tools[0]'
 
 **Error:**
 ```
-Image model "gemini-3.1-flash-image-preview" is not supported. Supported image models: gemini-3.1-pro-image
+Image generation models are not supported via the Antigravity proxy endpoint (cloudcode-pa v1internal).
 ```
 
 **Why this happens:**
-The `gemini-3.1-flash-image-preview` model is currently not supported for image generation through this plugin. The only supported image model is `gemini-3.1-pro-image`.
+This plugin routes requests through Google Cloud Code internal endpoints (`v1internal:*`) for coding-assistant traffic. Those endpoints do not expose public image-generation model IDs, so image model requests fail.
 
 **Solution:**
-Update your configuration to use the supported model. In your settings or prompt, switch the image model to `gemini-3.1-pro-image` or `antigravity-gemini-3.1-pro-image`.
+Use text/code models with this plugin. For image generation, call the direct Gemini API in a separate workflow outside this proxy path.
 
 ---
 
