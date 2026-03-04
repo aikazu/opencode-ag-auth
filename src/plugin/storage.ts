@@ -351,12 +351,13 @@ export { getConfigDir };
 export const LOCK_OPTIONS = {
   stale: 10000,
   retries: {
-    retries: 20,
+    retries: 5,
     minTimeout: 100,
-    maxTimeout: 2000,
+    maxTimeout: 1000,
     factor: 2,
   },
 };
+
 
 /**
  * Ensures the file has secure permissions (0600) on POSIX systems.
