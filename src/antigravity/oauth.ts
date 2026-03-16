@@ -137,8 +137,7 @@ async function fetchProjectID(accessToken: string): Promise<string> {
   const loadHeaders: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     "Content-Type": "application/json",
-    "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
-    "Client-Metadata": getAntigravityHeaders()["Client-Metadata"],
+    ...getAntigravityHeaders(),
   };
 
   const loadEndpoints = Array.from(
