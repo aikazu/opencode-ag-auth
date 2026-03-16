@@ -4,6 +4,7 @@ import {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_ENDPOINT_PROD,
   ANTIGRAVITY_PROVIDER_ID,
+  GEMINI_CLI_REDIRECT_URI,
   getAntigravityHeaders,
   type HeaderStyle,
 } from "./constants";
@@ -860,6 +861,10 @@ function getStateFromAuthorizationUrl(authorizationUrl: string): string {
   } catch {
     return "";
   }
+}
+
+function getOAuthListenerRedirectUri(isGeminiCli: boolean): string | undefined {
+  return isGeminiCli ? GEMINI_CLI_REDIRECT_URI : undefined;
 }
 
 function extractOAuthCallbackParams(url: URL): OAuthCallbackParams | null {
@@ -4187,7 +4192,11 @@ export const createAntigravityPlugin =
                       let listener: OAuthListener | null = null;
                       if (!isHeadless) {
                         try {
-                          listener = await startOAuthListener();
+                          listener = await startOAuthListener({
+                            redirectUri: getOAuthListenerRedirectUri(
+                              isGeminiCli,
+                            ),
+                          });
                         } catch {
                           listener = null;
                         }
@@ -4733,6 +4742,7 @@ function isExplicitQuotaFromUrl(urlString: string): boolean {
 
 export const __testExports = {
   getHeaderStyleFromUrl,
+  getOAuthListenerRedirectUri,
   getSoftQuotaThresholdForHeaderStyle,
   resolveHeaderRoutingDecision,
   resolveQuotaFallbackHeaderStyle,
