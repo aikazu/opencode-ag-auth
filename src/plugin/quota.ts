@@ -1,6 +1,7 @@
 import {
   ANTIGRAVITY_DEFAULT_PROJECT_ID,
   ANTIGRAVITY_ENDPOINT_PROD,
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
   getAntigravityHeaders,
   ANTIGRAVITY_PROVIDER_ID,
   GEMINI_CLI_HEADERS,
@@ -192,30 +193,37 @@ async function fetchAvailableModels(
   accessToken: string,
   projectId: string,
 ): Promise<FetchAvailableModelsResponse> {
-  const endpoint = ANTIGRAVITY_ENDPOINT_PROD;
   const quotaHeaders = getAntigravityHeaders();
   const errors: string[] = [];
-
   const body = { project: resolveQuotaProjectId(projectId) };
-  const response = await fetchWithTimeout(`${endpoint}/v1internal:fetchAvailableModels`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      ...quotaHeaders,
-    },
-    body: JSON.stringify(body),
-  });
 
-  if (response.ok) {
-    return (await response.json()) as FetchAvailableModelsResponse;
+  for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+    try {
+      const response = await fetchWithTimeout(`${endpoint}/v1internal:fetchAvailableModels`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          ...quotaHeaders,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (response.ok) {
+        return (await response.json()) as FetchAvailableModelsResponse;
+      }
+
+      const message = await response.text().catch(() => "");
+      const snippet = message.trim().slice(0, 200);
+      errors.push(
+        `fetchAvailableModels ${response.status} at ${endpoint}${snippet ? `: ${snippet}` : ""}`,
+      );
+    } catch (e) {
+      errors.push(
+        `fetchAvailableModels error at ${endpoint}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
   }
-
-  const message = await response.text().catch(() => "");
-  const snippet = message.trim().slice(0, 200);
-  errors.push(
-    `fetchAvailableModels ${response.status} at ${endpoint}${snippet ? `: ${snippet}` : ""}`,
-  );
 
   throw new Error(errors.join("; ") || "fetchAvailableModels failed");
 }
@@ -224,31 +232,35 @@ async function fetchGeminiCliQuota(
   accessToken: string,
   projectId: string,
 ): Promise<RetrieveUserQuotaResponse> {
-  const endpoint = ANTIGRAVITY_ENDPOINT_PROD;
   const body = { project: resolveQuotaProjectId(projectId) };
   
-  try {
-    const response = await fetchWithTimeout(`${endpoint}/v1internal:retrieveUserQuota`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        ...GEMINI_CLI_HEADERS,
-      },
-      body: JSON.stringify(body),
-    });
+  for (const endpoint of ANTIGRAVITY_ENDPOINT_FALLBACKS) {
+    try {
+      const response = await fetchWithTimeout(`${endpoint}/v1internal:retrieveUserQuota`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          ...GEMINI_CLI_HEADERS,
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (response.ok) {
-      const data = (await response.json()) as RetrieveUserQuotaResponse;
-      return data;
+      if (response.ok) {
+        const data = (await response.json()) as RetrieveUserQuotaResponse;
+        return data;
+      }
+
+      // Non-OK response - try next endpoint
+      continue;
+    } catch {
+      // Network error or timeout - try next endpoint
+      continue;
     }
-
-    // Non-OK response - return empty buckets
-    return { buckets: [] };
-  } catch {
-    // Network error or timeout - return empty buckets
-    return { buckets: [] };
   }
+
+  // All endpoints failed - return empty buckets
+  return { buckets: [] };
 }
 
 function aggregateGeminiCliQuota(response: RetrieveUserQuotaResponse): GeminiCliQuotaSummary {
