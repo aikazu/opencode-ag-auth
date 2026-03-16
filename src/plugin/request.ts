@@ -75,7 +75,7 @@ import type { GoogleSearchConfig } from "./transform/types";
 
 const log = createLogger("request");
 
-const PLUGIN_SESSION_ID = `-${crypto.randomUUID()}`;
+const PLUGIN_SESSION_ID = crypto.randomUUID();
 
 const sessionDisplayedThinkingHashes = new Set<string>();
 
@@ -95,6 +95,14 @@ function buildSignatureSessionKey(
     ? conversationKey.trim()
     : "default";
   return `${sessionId}:${modelKey}:${projectPart}:${conversationPart}`;
+}
+
+function buildOpaqueSessionId(signatureSessionKey: string): string {
+  const digest = crypto
+    .createHash("sha256")
+    .update(signatureSessionKey, "utf8")
+    .digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-${digest.slice(12, 16)}-${digest.slice(16, 20)}-${digest.slice(20, 32)}`;
 }
 
 
@@ -200,7 +208,7 @@ function resolveConversationKey(requestPayload: Record<string, unknown>): string
   if (!seed) {
     return undefined;
   }
-  return `seed-${hashConversationSeed(seed)}`;
+  return hashConversationSeed(seed);
 }
 
 function resolveConversationKeyFromRequests(requestObjects: Array<Record<string, unknown>>): string | undefined {
@@ -582,12 +590,8 @@ export function getPluginSessionId(): string {
 }
 
 function generateSyntheticProjectId(): string {
-  const adjectives = ["useful", "bright", "swift", "calm", "bold"];
-  const nouns = ["fuze", "wave", "spark", "flow", "core"];
-  const adj = adjectives[Math.floor(Math.random() * adjectives.length)];
-  const noun = nouns[Math.floor(Math.random() * nouns.length)];
-  const randomPart = crypto.randomUUID().slice(0, 5).toLowerCase();
-  return `${adj}-${noun}-${randomPart}`;
+  const randomPart = crypto.randomUUID().replace(/-/g, "").slice(0, 12).toLowerCase();
+  return `project-${randomPart}`;
 }
 
 const STREAM_ACTION = "streamGenerateContent";
@@ -705,6 +709,7 @@ export function prepareAntigravityRequest(
   const toolDebugSummaries: string[] = [];
   let toolDebugPayload: string | undefined;
   let sessionId: string | undefined;
+  let outboundSessionId: string | undefined;
   let needsSignedThinkingWarmup = false;
   let thinkingRecoveryMessage: string | undefined;
 
@@ -835,6 +840,7 @@ export function prepareAntigravityRequest(
         const conversationKey = resolveConversationKeyFromRequests(requestObjects);
         const modelForCacheKey = effectiveModel.replace(/-(minimal|low|medium|high)$/i, "");
         signatureSessionKey = buildSignatureSessionKey(PLUGIN_SESSION_ID, modelForCacheKey, conversationKey, resolveProjectKey(parsedBody.project));
+        outboundSessionId = buildOpaqueSessionId(signatureSessionKey);
 
         if (requestObjects.length > 0) {
           sessionId = signatureSessionKey;
@@ -842,7 +848,7 @@ export function prepareAntigravityRequest(
 
         for (const req of requestObjects) {
           // Use stable session ID for signature caching across multi-turn conversations
-          (req as any).sessionId = signatureSessionKey;
+          (req as any).sessionId = outboundSessionId;
           stripInjectedDebugFromRequestPayload(req as Record<string, unknown>);
 
           if (isClaude) {
@@ -1480,6 +1486,7 @@ export function prepareAntigravityRequest(
 
         const effectiveProjectId = projectId?.trim() || (headerStyle === "antigravity" ? generateSyntheticProjectId() : "");
         resolvedProjectId = effectiveProjectId;
+        outboundSessionId = buildOpaqueSessionId(signatureSessionKey);
 
         // Inject Antigravity system instruction with role "user" (CLIProxyAPI v6.6.89 compatibility)
         // This sets request.systemInstruction.role = "user" and request.systemInstruction.parts[0].text
@@ -1520,12 +1527,12 @@ export function prepareAntigravityRequest(
         if (headerStyle === "antigravity") {
           wrappedBody.requestType = "agent";
           wrappedBody.userAgent = "antigravity";
-          wrappedBody.requestId = "agent-" + crypto.randomUUID();
+          wrappedBody.requestId = crypto.randomUUID();
         }
         if (wrappedBody.request && typeof wrappedBody.request === 'object') {
           // Use stable session ID for signature caching across multi-turn conversations
           sessionId = signatureSessionKey;
-          (wrappedBody.request as any).sessionId = signatureSessionKey;
+          (wrappedBody.request as any).sessionId = outboundSessionId;
         }
 
         body = JSON.stringify(wrappedBody);
@@ -1870,6 +1877,7 @@ export async function transformAntigravityResponse(
 
 export const __testExports = {
   buildSignatureSessionKey,
+  buildOpaqueSessionId,
   hashConversationSeed,
   extractTextFromContent,
   extractConversationSeedFromMessages,
