@@ -474,6 +474,57 @@ describe("request.ts", () => {
       const result = callTransformSseLine(line);
       expect(result).toContain("data:");
     });
+
+    it("caps displayed thinking hash set size", () => {
+      const store = createMockSignatureStore();
+      const buffer = createMockThoughtBuffer();
+      const sentBuffer = createMockThoughtBuffer();
+      const displayedThinkingHashes = new Set<string>();
+      const options: StreamingOptions = {
+        displayedThinkingHashes,
+        displayedThinkingHashesMaxSize: 1,
+      };
+
+      const lineOne = `data: ${JSON.stringify({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{ thought: true, text: "first-thinking" }]
+            }
+          }]
+        }
+      })}`;
+      const lineTwo = `data: ${JSON.stringify({
+        response: {
+          candidates: [{
+            content: {
+              parts: [{ thought: true, text: "second-thinking" }]
+            }
+          }]
+        }
+      })}`;
+
+      transformSseLine(
+        lineOne,
+        store,
+        buffer,
+        sentBuffer,
+        defaultCallbacks,
+        options,
+        { ...defaultDebugState },
+      );
+      transformSseLine(
+        lineTwo,
+        store,
+        buffer,
+        sentBuffer,
+        defaultCallbacks,
+        options,
+        { ...defaultDebugState },
+      );
+
+      expect(displayedThinkingHashes.size).toBe(1);
+    });
   });
 
   describe("transformStreamingPayload", () => {

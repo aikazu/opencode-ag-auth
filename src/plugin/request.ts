@@ -78,6 +78,7 @@ const log = createLogger("request");
 const PLUGIN_SESSION_ID = crypto.randomUUID();
 
 const sessionDisplayedThinkingHashes = new Set<string>();
+const SESSION_DISPLAYED_THINKING_HASHES_MAX_SIZE = 2000;
 
 const MIN_SIGNATURE_LENGTH = 50;
 
@@ -1328,6 +1329,7 @@ export async function transformAntigravityResponse(
     cacheSignatures,
     sessionId,
     displayedThinkingHashes: effectiveModel && isGemini3Model(effectiveModel) ? sessionDisplayedThinkingHashes : undefined,
+    displayedThinkingHashesMaxSize: SESSION_DISPLAYED_THINKING_HASHES_MAX_SIZE,
     signatureStore: defaultSignatureStore,
     cacheSignature,
     injectDebugThinking,
