@@ -45,6 +45,7 @@
         "test:watch": "vitest",
         "test:ui": "vitest --ui",
         "test:coverage": "vitest run --coverage",
+        "test:snippet-consistency": "npx tsx script/check-snippet-consistency.ts",
         "prepublishOnly": "pnpm run build",
         "test:e2e:models": "npx tsx script/test-models.ts",
         "test:e2e:regression": "npx tsx script/test-regression.ts",

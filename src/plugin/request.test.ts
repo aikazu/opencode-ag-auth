@@ -219,9 +219,15 @@ describe("request.ts", () => {
       expect(isGeminiToolUsePart({ functionCall: { name: "test" } })).toBe(true);
     });
 
+    it("returns true for tool_use and toolUse shapes", () => {
+      expect(isGeminiToolUsePart({ tool_use: { id: "tool-1" } })).toBe(true);
+      expect(isGeminiToolUsePart({ toolUse: { id: "tool-2" } })).toBe(true);
+    });
+
     it("returns false for non-functionCall parts", () => {
       expect(isGeminiToolUsePart({ text: "hello" })).toBe(false);
       expect(isGeminiToolUsePart({ thought: true })).toBe(false);
+      expect(isGeminiToolUsePart("tool" as unknown)).toBe(false);
     });
 
     it("returns false for null/undefined", () => {
@@ -235,12 +241,17 @@ describe("request.ts", () => {
       expect(isGeminiThinkingPart({ thought: true, text: "thinking..." })).toBe(true);
     });
 
+    it("returns true for reasoning type parts", () => {
+      expect(isGeminiThinkingPart({ type: "reasoning", text: "trace" })).toBe(true);
+    });
+
     it("returns false for thought:false parts", () => {
       expect(isGeminiThinkingPart({ thought: false, text: "not thinking" })).toBe(false);
     });
 
     it("returns false for parts without thought property", () => {
       expect(isGeminiThinkingPart({ text: "hello" })).toBe(false);
+      expect(isGeminiThinkingPart(42 as unknown)).toBe(false);
     });
   });
 
@@ -249,7 +260,7 @@ describe("request.ts", () => {
       const part = { thought: true, text: "thinking..." };
       const result = ensureThoughtSignature(part, "no-cache-session");
       // Now uses sentinel fallback to prevent API rejection
-      expect(result.thoughtSignature).toBe("skip_thought_signature_validator");
+      expect((result as Record<string, unknown>).thoughtSignature).toBe("skip_thought_signature_validator");
     });
 
     it("preserves existing thoughtSignature", () => {
@@ -262,7 +273,7 @@ describe("request.ts", () => {
     it("does not modify non-thinking parts", () => {
       const part = { text: "regular text" };
       const result = ensureThoughtSignature(part, "session-key");
-      expect(result.thoughtSignature).toBeUndefined();
+      expect((result as Record<string, unknown>).thoughtSignature).toBeUndefined();
     });
 
     it("returns null/undefined inputs unchanged", () => {

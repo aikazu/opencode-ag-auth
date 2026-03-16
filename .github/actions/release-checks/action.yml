@@ -1,0 +1,17 @@
+name: Release Checks
+description: Install dependencies and run typecheck/tests for release workflows
+
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install
+
+    - name: Run type check
+      shell: bash
+      run: pnpm run typecheck
+
+    - name: Run tests
+      shell: bash
+      run: pnpm test
